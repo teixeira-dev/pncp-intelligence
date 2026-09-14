@@ -1,0 +1,43 @@
+{
+  "name": "pncp-intelligence",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start -H 0.0.0.0",
+    "lint": "eslint .",
+    "typecheck": "prisma generate && tsc --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run tests/integration.test.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "tsx scripts/seed.ts",
+    "admin:create": "tsx scripts/admin.ts",
+    "job:sync": "tsx scripts/sync.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "bcryptjs": "^3.0.2",
+    "lucide-react": "^0.468.0",
+    "next": "^16.0.10",
+    "nodemailer": "^7.0.11",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/nodemailer": "^7.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^16.0.10",
+    "prisma": "^6.19.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0",
+    "tailwindcss": "^4.1.0",
+    "@tailwindcss/postcss": "^4.1.0"
+  }
+}

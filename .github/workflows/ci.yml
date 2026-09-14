@@ -37,13 +37,23 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npx playwright install --with-deps chromium
       - run: npm run build
       - name: Startup and health check
         run: |
           npm start > /tmp/pncp-server.log 2>&1 &
           for attempt in $(seq 1 30); do
-            if curl --fail --silent http://localhost:3000/health; then exit 0; fi
+            if curl --fail --silent http://localhost:3000/health; then break; fi
             sleep 2
           done
-          cat /tmp/pncp-server.log
-          exit 1
+          curl --fail http://localhost:3000/health
+          npx tsx scripts/http-smoke.ts
+          npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-validation
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7

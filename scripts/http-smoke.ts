@@ -1,0 +1,54 @@
+import assert from "node:assert/strict";
+import {randomBytes} from "node:crypto";
+import {db} from "../src/lib/db";
+import {passwordHash} from "../src/lib/auth";
+import {upsertOpportunity,refreshCompany,processAlerts} from "../src/lib/sync";
+if(process.env.RUN_INTEGRATION!=="1")throw new Error("Use only in an isolated integration environment.");
+const base="http://localhost:3000",suffix=randomBytes(6).toString("hex"),secret=randomBytes(18).toString("hex");
+const users:string[]=[],orgs:string[]=[];let tenderId="";
+async function call(path:string,method="GET",data?:unknown,cookie=""){
+ return fetch(base+"/api/"+path,{method,headers:{"Content-Type":"application/json",Origin:base,Cookie:cookie},...(data!==undefined?{body:JSON.stringify(data)}:{})});
+}
+async function createUser(label:string,role="USER"){
+ const u=await db.user.create({data:{email:label+suffix+"@example.test",name:label,passwordHash:await passwordHash(secret),role,memberships:{create:{organization:{create:{name:label+suffix}}}}},include:{memberships:true}});
+ users.push(u.id);orgs.push(u.memberships[0].organizationId);
+ const r=await call("auth/login","POST",{email:u.email,password:secret});assert.equal(r.status,200);
+ const cookie=r.headers.get("set-cookie")?.split(";")[0];assert(cookie);return {u,cookie};
+}
+async function main(){
+ assert.equal((await call("companies")).status,401);
+ const a=await createUser("A"),b=await createUser("B");
+ assert.equal((await call("admin","GET",undefined,a.cookie)).status,403);
+ const invalid=await fetch(base+"/api/companies",{method:"POST",headers:{"Content-Type":"application/json",Cookie:a.cookie,Origin:"https://untrusted.example"},body:"{}"});assert.equal(invalid.status,403);
+ const created=await call("companies","POST",{legalName:"Hospital Test",cnpj:"11222333000181",keywords:["hospitalar"],regions:["PE"]},a.cookie);assert.equal(created.status,200);
+ const company=await created.json();
+ assert.deepEqual(await (await call("companies/"+company.id,"GET",undefined,b.cookie)).json(),[]);
+ assert.equal((await call("companies/"+company.id,"PATCH",{legalName:"Hacked",cnpj:"11222333000181"},b.cookie)).status,404);
+ assert.equal((await call("companies/"+company.id,"DELETE",undefined,b.cookie)).status,404);
+ tenderId="SMOKE-"+suffix;
+ await upsertOpportunity({numeroControlePNCP:tenderId,anoCompra:2026,sequencialCompra:1,numeroCompra:suffix,objetoCompra:"Material hospitalar "+suffix,modalidadeId:6,modalidadeNome:"Pregão eletrônico",situacaoCompraNome:"Divulgada no PNCP",dataPublicacaoPncp:new Date().toISOString(),orgaoEntidade:{cnpj:"11222333000181",razaoSocial:"Teste de integração"},unidadeOrgao:{municipioNome:"Recife",ufSigla:"PE"}});
+ await refreshCompany(company.id);
+ for(const sort of ["recent","score","relevance","deadline","value_desc","value_asc"]){
+ const response=await call("opportunities?state=PE&q="+suffix+"&sort="+sort,"GET",undefined,a.cookie);assert.equal(response.status,200);assert.equal((await response.json()).total,1);
+ }
+ assert.equal((await call("opportunities/"+tenderId+"/favorite","POST",{},a.cookie)).status,200);
+ assert.equal((await (await call("opportunities?favorite=1","GET",undefined,b.cookie)).json()).total,0);
+ assert.equal((await call("opportunities/"+tenderId+"/tracking","POST",{status:"INTERESSADO"},a.cookie)).status,200);
+ assert.equal((await call("opportunities/"+tenderId+"/analyze","POST",{},a.cookie)).status,503);
+ const alert=await call("alerts","POST",{name:"Teste hospital",companyId:company.id,keywords:["hospitalar"],minScore:80},a.cookie);assert.equal(alert.status,200);
+ const alertRow=await alert.json();
+ assert.equal((await call("alerts/"+alertRow.id,"DELETE",undefined,b.cookie)).status,404);
+ await db.alert.update({where:{id:alertRow.id},data:{createdAt:new Date(Date.now()-60000)}});
+ await processAlerts();await processAlerts();
+ const notifications=await (await call("notifications","GET",undefined,a.cookie)).json();assert.equal(notifications.length,1);
+ assert.equal((await call("notifications/all","PATCH",{},a.cookie)).status,200);
+ assert.equal((await call("auth/logout","POST",{},a.cookie)).status,200);
+ assert.equal((await call("companies","GET",undefined,a.cookie)).status,401);
+ console.log("HTTP_SMOKE_PASSED: login, CSRF, authorization, cross-user isolation, CRUD, search/sorts, favorite, tracking, AI unavailable, alerts, notification deduplication and logout.");
+}
+main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
+ await db.user.deleteMany({where:{id:{in:users}}});await db.organization.deleteMany({where:{id:{in:orgs}}});
+ if(tenderId)await db.opportunity.deleteMany({where:{id:tenderId}});
+ await db.contractingAgency.deleteMany({where:{id:"11222333000181",opportunities:{none:{}}}});
+ await db.$disconnect();
+});

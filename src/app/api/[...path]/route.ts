@@ -1,13 +1,14 @@
 import {NextResponse} from "next/server";
 import {z,ZodError} from "zod";
 import {Prisma} from "@prisma/client";
-import {randomBytes} from "node:crypto";
+import {randomBytes,timingSafeEqual} from "node:crypto";
 import {compare} from "bcryptjs";
 import {db} from "@/lib/db";
 import {audit,digest,HttpError,login,logout,passwordHash,rateLimit,requireAdmin,requireUser,verifyOrigin} from "@/lib/auth";
 import {alertInput,companyInput,credentials,password} from "@/lib/validation";
 import {searchOpportunities} from "@/lib/search";
 import {analyze} from "@/lib/ai";
+import {report,csvCell} from "@/lib/reports";
 import {sendMail} from "@/lib/mail";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -20,6 +21,18 @@ async function handler(req:Request,context:{params:Promise<{path:string[]}>}){
  if(resource==="auth"){
  if(method!=="POST")throw new HttpError(405,"Método não permitido.");
  const b=await body(req);
+ if(id==="bootstrap"){
+ const parsed=z.object({token:z.string().regex(/^[a-f0-9]{64}$/),name:z.string().min(2).max(150),email:z.string().email().max(254).transform(v=>v.toLowerCase()),password}).strict().parse(b);
+ const expected=process.env.SETUP_TOKEN_HASH;
+ if(!expected||!/^[a-f0-9]{64}$/.test(expected)||!timingSafeEqual(Buffer.from(digest(parsed.token),"hex"),Buffer.from(expected,"hex")))throw new HttpError(403,"Convite de configuração inválido.");
+ await rateLimit("bootstrap",5,60);
+ const hashed=await passwordHash(parsed.password);
+ await db.$transaction(async tx=>{
+ await tx.$executeRaw`SELECT pg_advisory_xact_lock(70421017)`;
+ if(await tx.user.count())throw new HttpError(409,"A configuração inicial já foi concluída.");
+ await tx.user.create({data:{name:parsed.name,email:parsed.email,passwordHash:hashed,role:"ADMIN",memberships:{create:{organization:{create:{name:parsed.name}}}}}});
+ });return reply({ok:true});
+ }
  if(id==="login"){const c=credentials.parse(b);await login(c.email,c.password);return reply({ok:true});}
  if(id==="logout"){await logout();return reply({ok:true});}
  if(id==="recover"){
@@ -110,6 +123,14 @@ async function handler(req:Request,context:{params:Promise<{path:string[]}>}){
  }
  if(resource==="history"&&method==="GET")return reply(await db.auditLog.findMany({where:{userId},take:100,orderBy:{createdAt:"desc"}}));
  if(resource==="analyses"&&method==="GET")return reply(await db.aIAnalysis.findMany({where:{userId},include:{opportunity:{select:{id:true,object:true}}},take:50,orderBy:{createdAt:"desc"}}));
+ if(resource==="reports"&&method==="GET"){
+ const params=new URL(req.url).searchParams;const data=await report(userId,params);
+ if(params.get("format")==="csv"){
+ const rows=[["Grupo","Oportunidades","Valor estimado total"],...data.rows.map(r=>[r.label,r.count,r.value?.toString()??""])];
+ return new Response("\uFEFF"+rows.map(row=>row.map(csvCell).join(";")).join("\r\n"),{headers:{"Content-Type":"text/csv; charset=utf-8","Content-Disposition":"attachment; filename=pncp-relatorio.csv","Cache-Control":"no-store"}});
+ }
+ return reply(data);
+ }
  if(resource==="dashboard"&&method==="GET"){
  const recommendation:Prisma.OpportunityWhereInput={matches:{some:{company:{organizationId:{in:orgs}},score:{gte:70}}}};
  const [total,open,favorites,recommended,recent,closing,value,latest,due,largest,activity,companies,states]=await Promise.all([

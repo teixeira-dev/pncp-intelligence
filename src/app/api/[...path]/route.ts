@@ -75,12 +75,18 @@ async function handler(req:Request,context:{params:Promise<{path:string[]}>}){
  }
  if(resource==="opportunities"){
  if(method==="GET"&&!id)return reply(await searchOpportunities(userId,new URL(req.url).searchParams));
+ if(method==="GET"&&id&&action==="items"){
+ const page=z.coerce.number().int().min(1).max(10000).parse(new URL(req.url).searchParams.get("page")??1);
+ const [items,total]=await Promise.all([db.opportunityItem.findMany({where:{opportunityId:id},orderBy:{number:"asc"},take:50,skip:(page-1)*50}),db.opportunityItem.count({where:{opportunityId:id}})]);
+ return reply({items,total,page,pages:Math.ceil(total/50)});
+ }
  if(method==="GET"&&id){
  const o=await db.opportunity.findUnique({where:{id},include:{agency:true,items:{take:100,orderBy:{number:"asc"}},documents:true,favorites:{where:{userId}},tracking:{where:{userId}},matches:{where:{company:{organizationId:{in:orgs}}},include:{company:{select:{legalName:true}}}},analyses:{where:{userId},orderBy:{createdAt:"desc"},take:5}}});
  if(!o)throw new HttpError(404,"Oportunidade não encontrada.");return reply(o);
  }
  if(id&&method==="POST"){
  const o=await db.opportunity.findUnique({where:{id},select:{id:true}});if(!o)throw new HttpError(404,"Oportunidade não encontrada.");
+ if(action==="refresh"){await rateLimit("enrich:"+userId,5,60);await db.jobRequest.create({data:{type:"ENRICH:"+id}});return reply({message:"Importação solicitada. O próximo job buscará itens e documentos oficiais."});}
  if(action==="favorite"){await db.favorite.upsert({where:{userId_opportunityId:{userId,opportunityId:id}},create:{userId,opportunityId:id},update:{}});await audit(userId,"FAVORITED",id);return reply({ok:true});}
  if(action==="tracking"){const {status}=z.object({status:z.enum(["NOVA","ANALISANDO","INTERESSADO","PARTICIPANDO","DESCARTADA","GANHA","PERDIDA"])}).strict().parse(await body(req));await db.opportunityTracking.upsert({where:{userId_opportunityId:{userId,opportunityId:id}},create:{userId,opportunityId:id,status},update:{status}});await audit(userId,"STATUS_"+status,id);return reply({ok:true});}
  if(action==="analyze"){const result=await analyze(userId,id);await audit(userId,"ANALYSIS_REQUESTED",id);return reply(result);}

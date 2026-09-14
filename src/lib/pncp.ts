@@ -15,7 +15,7 @@ export async function fetchJson(url:URL,fetcher:typeof fetch=fetch){
  let last:unknown;
  for(let attempt=0;attempt<3;attempt++){
  try{
- const r=await fetcher(url,{signal:AbortSignal.timeout(20000),headers:{accept:"application/json"}});
+ const r=await fetcher(url,{signal:AbortSignal.timeout(45000),headers:{accept:"application/json"}});
  if(r.status===204)return {data:[],totalPaginas:0};
  if(!r.ok){if(r.status!==429&&r.status<500)throw new NonRetryable("PNCP_HTTP_"+r.status);throw new Error("PNCP_HTTP_"+r.status);}
  return await r.json();
@@ -30,10 +30,16 @@ export function normalizeOpportunity(input:unknown){
  return {agency:{id:r.orgaoEntidade.cnpj,name:r.orgaoEntidade.razaoSocial,sphere:r.orgaoEntidade.esferaId,power:r.orgaoEntidade.poderId},
  opportunity:{id:r.numeroControlePNCP,agencyId:r.orgaoEntidade.cnpj,year:r.anoCompra,sequence:r.sequencialCompra,number:r.numeroCompra,object:r.objetoCompra,description:r.informacaoComplementar??"",estimatedValue:r.valorTotalEstimado?.toFixed(2)??null,city:r.unidadeOrgao.municipioNome,state:r.unidadeOrgao.ufSigla,modality:r.modalidadeId,modalityName:r.modalidadeNome,disputeMode:r.modoDisputaNome,officialStatus:r.situacaoCompraNome,publishedAt:date(r.dataPublicacaoPncp)!,opensAt:date(r.dataAberturaProposta),closesAt:date(r.dataEncerramentoProposta),officialUrl:"https://pncp.gov.br/app/editais/"+r.orgaoEntidade.cnpj+"/"+r.anoCompra+"/"+r.sequencialCompra,contentHash,raw:JSON.parse(JSON.stringify(r))}};
 }
-export function publicationUrl(start:Date,end:Date,modality:number,page:number){
+export function publicationUrl(start:Date,end:Date,modality:number,page:number,mode:"publicacao"|"atualizacao"="publicacao"){
  const base=process.env.PNCP_BASE_URL??"https://pncp.gov.br/api/consulta";
- const u=new URL(base.replace(/\/$/,"")+"/v1/contratacoes/publicacao");
+ const u=new URL(base.replace(/\/$/,"")+"/v1/contratacoes/"+mode);
  if(u.protocol!=="https:"||u.hostname!=="pncp.gov.br")throw new Error("PNCP_BASE_URL must use official HTTPS host");
  const fmt=(d:Date)=>d.toISOString().slice(0,10).replace(/-/g,"");
  u.search=new URLSearchParams({dataInicial:fmt(start),dataFinal:fmt(end),codigoModalidadeContratacao:String(modality),pagina:String(page),tamanhoPagina:"50"}).toString();return u;
+}
+
+export async function officialModalities(){
+ const rows=z.array(z.object({id:z.number().int().positive(),nome:z.string()})).parse(await fetchJson(new URL("https://pncp.gov.br/api/pncp/v1/modalidades")));
+ if(!rows.length)throw new Error("PNCP_EMPTY_MODALITIES");
+ return rows;
 }

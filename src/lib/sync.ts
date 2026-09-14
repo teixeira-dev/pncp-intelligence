@@ -1,7 +1,8 @@
 import {Prisma} from "@prisma/client";
 import {db} from "./db";
-import {fetchJson,normalizeOpportunity,pageSchema,publicationUrl,wait} from "./pncp";
+import {fetchJson,normalizeOpportunity,pageSchema,publicationUrl,wait,officialModalities} from "./pncp";
 import {matchOpportunity,normalize} from "./matching";
+import {enrichOpportunity} from "./enrichment";
 import {sendMail} from "./mail";
 export async function upsertOpportunity(raw:unknown){
  const n=normalizeOpportunity(raw);
@@ -54,17 +55,28 @@ export async function runSync(){
  const result=await lock.$queryRaw<{locked:boolean}[]>`SELECT pg_try_advisory_xact_lock(70421016) AS locked`;
  if(!result[0].locked)return;
  await db.syncJob.updateMany({where:{status:"RUNNING",startedAt:{lt:new Date(Date.now()-3600000)}},data:{status:"FAILED",finishedAt:new Date(),error:"Processo anterior interrompido."}});
+ const pending=await db.jobRequest.findMany({where:{status:"PENDING"},take:100,orderBy:{createdAt:"asc"}});
+ for(const request of pending.filter(r=>r.type.startsWith("ENRICH:"))){
+ try{await enrichOpportunity(request.type.slice(7));await db.jobRequest.update({where:{id:request.id},data:{status:"DONE"}});}
+ catch{await db.jobRequest.update({where:{id:request.id},data:{status:"FAILED"}});console.error(JSON.stringify({event:"ENRICH_FAILED",jobId:request.id}));}
+ }
+ // Profile changes should still be processed when PNCP is down.
+ if(pending.some(r=>r.type==="MATCH")){
+ for(const c of await db.company.findMany({select:{id:true}}))await refreshCompany(c.id);
+ await db.jobRequest.updateMany({where:{id:{in:pending.filter(r=>r.type==="MATCH").map(r=>r.id)}},data:{status:"DONE"}});
+ }
  const job=await db.syncJob.create({data:{}});const counters={received:0,created:0,updated:0,unchanged:0};
  try{
- const end=new Date(),saved=await db.syncCursor.findUnique({where:{id:"PNCP_PUBLICATION"}});
+ const modalities=await officialModalities();
+ const end=new Date(),saved=await db.syncCursor.findUnique({where:{id:"PNCP_UPDATES"}});
  const days=Math.max(1,Math.min(30,Number(process.env.PNCP_INITIAL_DAYS)||7));
  let start=saved?new Date(saved.through.getTime()-2*86400000):new Date(end.getTime()-days*86400000);
- // Bounded windows and a 2-day overlap. Existing older notices require a future reconciliation pass.
+ // Updates endpoint covers changes to old publications too; overlap protects date boundaries.
  while(start<=end){
  const until=new Date(Math.min(end.getTime(),start.getTime()+6*86400000));
- for(let modality=1;modality<=13;modality++){
+ for(const {id:modality} of modalities){
  for(let page=1;page<=10000;page++){
- const parsed=pageSchema.parse(await fetchJson(publicationUrl(start,until,modality,page)));
+ const parsed=pageSchema.parse(await fetchJson(publicationUrl(start,until,modality,page,"atualizacao")));
  for(const raw of parsed.data){const kind=await upsertOpportunity(raw);counters.received++;counters[kind]++;}
  await db.syncJob.update({where:{id:job.id},data:counters});
  if(page>=parsed.totalPaginas||parsed.data.length===0)break;
@@ -72,12 +84,12 @@ export async function runSync(){
  await wait(350);
  }await wait(350);
  }
- await db.syncCursor.upsert({where:{id:"PNCP_PUBLICATION"},create:{id:"PNCP_PUBLICATION",through:until},update:{through:until}});
+ await db.syncCursor.upsert({where:{id:"PNCP_UPDATES"},create:{id:"PNCP_UPDATES",through:until},update:{through:until}});
  start=new Date(until.getTime()+86400000);
  }
  for(const c of await db.company.findMany({select:{id:true}}))await refreshCompany(c.id);
  await processAlerts();
- await db.jobRequest.updateMany({where:{status:"PENDING"},data:{status:"DONE"}});
+ await db.jobRequest.updateMany({where:{id:{in:pending.filter(r=>r.type==="SYNC").map(r=>r.id)}},data:{status:"DONE"}});
  await db.syncJob.update({where:{id:job.id},data:{status:"SUCCESS",finishedAt:new Date(),...counters}});
  }catch(e){
  const message=e instanceof Error?e.message.slice(0,400):"Unknown error";

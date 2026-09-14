@@ -1,0 +1,49 @@
+name: Validate PNCP Intelligence
+on:
+  pull_request:
+  push:
+    branches: [main, build/pncp-platform]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pncp
+          POSTGRES_PASSWORD: test-only-password
+          POSTGRES_DB: pncp_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://pncp:test-only-password@localhost:5432/pncp_test
+      APP_URL: http://localhost:3000
+      RUN_INTEGRATION: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npm run db:generate
+      - run: npm run db:migrate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Startup and health check
+        run: |
+          npm start > /tmp/pncp-server.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:3000/health; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/pncp-server.log
+          exit 1

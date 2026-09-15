@@ -1,0 +1,269 @@
+generator client {
+ provider = "prisma-client-js"
+}
+datasource db {
+ provider = "postgresql"
+ url = env("DATABASE_URL")
+}
+model User {
+ id String @id @default(cuid())
+ email String @unique
+ name String
+ passwordHash String
+ role String @default("USER")
+ active Boolean @default(true)
+ createdAt DateTime @default(now())
+ memberships Membership[]
+ sessions Session[]
+ resets PasswordReset[]
+ favorites Favorite[]
+ tracking OpportunityTracking[]
+ alerts Alert[]
+ notifications Notification[]
+ audits AuditLog[]
+ analyses AIAnalysis[]
+}
+model Organization {
+ id String @id @default(cuid())
+ name String
+ createdAt DateTime @default(now())
+ memberships Membership[]
+ companies Company[]
+}
+model Membership {
+ id String @id @default(cuid())
+ userId String
+ organizationId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade)
+ @@unique([userId,organizationId])
+}
+model Session {
+ id String @id
+ userId String
+ expiresAt DateTime
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ @@index([expiresAt])
+}
+model PasswordReset {
+ id String @id
+ userId String
+ expiresAt DateTime
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+}
+model RateLimit {
+ id String @id
+ count Int @default(1)
+ expiresAt DateTime
+}
+model Company {
+ id String @id @default(cuid())
+ organizationId String
+ legalName String
+ tradeName String @default("")
+ cnpj String
+ city String @default("")
+ state String @default("")
+ activity String @default("")
+ products String @default("")
+ services String @default("")
+ keywords String[] @default([])
+ excludedTerms String[] @default([])
+ regions String[] @default([])
+ modalities Int[] @default([])
+ minValue Decimal? @db.Decimal(20,2)
+ maxValue Decimal? @db.Decimal(20,2)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade)
+ matches OpportunityMatch[]
+ alerts Alert[]
+ @@unique([organizationId,cnpj])
+}
+model ContractingAgency {
+ id String @id
+ name String
+ sphere String?
+ power String?
+ opportunities Opportunity[]
+}
+model Opportunity {
+ id String @id
+ agencyId String
+ year Int
+ sequence Int
+ number String
+ object String
+ description String @default("")
+ city String
+ state String
+ modality Int
+ modalityName String
+ disputeMode String?
+ officialStatus String
+ estimatedValue Decimal? @db.Decimal(20,2)
+ publishedAt DateTime
+ opensAt DateTime?
+ closesAt DateTime?
+ officialUrl String
+ contentHash String
+ raw Json
+ discoveredAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ agency ContractingAgency @relation(fields:[agencyId],references:[id])
+ items OpportunityItem[]
+ documents OpportunityDocument[]
+ favorites Favorite[]
+ tracking OpportunityTracking[]
+ matches OpportunityMatch[]
+ analyses AIAnalysis[]
+ notifications Notification[]
+ @@index([publishedAt])
+ @@index([closesAt])
+ @@index([state,modality])
+ @@index([estimatedValue])
+ @@index([discoveredAt])
+}
+model OpportunityItem {
+ id String @id @default(cuid())
+ opportunityId String
+ number Int
+ description String
+ quantity Decimal? @db.Decimal(20,4)
+ unit String?
+ unitValue Decimal? @db.Decimal(20,4)
+ raw Json
+ opportunity Opportunity @relation(fields:[opportunityId],references:[id],onDelete:Cascade)
+ @@unique([opportunityId,number])
+}
+model OpportunityDocument {
+ id String @id @default(cuid())
+ opportunityId String
+ officialId String
+ title String
+ url String
+ type String?
+ opportunity Opportunity @relation(fields:[opportunityId],references:[id],onDelete:Cascade)
+ @@unique([opportunityId,officialId])
+}
+model OpportunityMatch {
+ id String @id @default(cuid())
+ companyId String
+ opportunityId String
+ score Int
+ reasons Json
+ version Int @default(1)
+ updatedAt DateTime @updatedAt
+ company Company @relation(fields:[companyId],references:[id],onDelete:Cascade)
+ opportunity Opportunity @relation(fields:[opportunityId],references:[id],onDelete:Cascade)
+ @@unique([companyId,opportunityId])
+ @@index([companyId,score])
+}
+model Favorite {
+ id String @id @default(cuid())
+ userId String
+ opportunityId String
+ createdAt DateTime @default(now())
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ opportunity Opportunity @relation(fields:[opportunityId],references:[id],onDelete:Cascade)
+ @@unique([userId,opportunityId])
+}
+model OpportunityTracking {
+ id String @id @default(cuid())
+ userId String
+ opportunityId String
+ status String
+ updatedAt DateTime @updatedAt
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ opportunity Opportunity @relation(fields:[opportunityId],references:[id],onDelete:Cascade)
+ @@unique([userId,opportunityId])
+}
+model Alert {
+ id String @id @default(cuid())
+ userId String
+ companyId String?
+ name String
+ keywords String[] @default([])
+ state String?
+ city String?
+ agency String?
+ modality Int?
+ minValue Decimal? @db.Decimal(20,2)
+ maxValue Decimal? @db.Decimal(20,2)
+ minScore Int @default(0)
+ active Boolean @default(true)
+ email Boolean @default(false)
+ createdAt DateTime @default(now())
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ company Company? @relation(fields:[companyId],references:[id],onDelete:Cascade)
+ notifications Notification[]
+}
+model Notification {
+ id String @id @default(cuid())
+ userId String
+ alertId String
+ opportunityId String
+ title String
+ readAt DateTime?
+ emailedAt DateTime?
+ createdAt DateTime @default(now())
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ alert Alert @relation(fields:[alertId],references:[id],onDelete:Cascade)
+ opportunity Opportunity @relation(fields:[opportunityId],references:[id],onDelete:Cascade)
+ @@unique([alertId,opportunityId])
+ @@index([userId,readAt])
+}
+model AIAnalysis {
+ id String @id @default(cuid())
+ userId String
+ opportunityId String
+ contentHash String
+ provider String
+ model String
+ version Int @default(1)
+ result Json
+ createdAt DateTime @default(now())
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ opportunity Opportunity @relation(fields:[opportunityId],references:[id],onDelete:Cascade)
+ @@unique([userId,opportunityId,contentHash,provider,model,version])
+}
+model SyncJob {
+ id String @id @default(cuid())
+ source String @default("PNCP")
+ status String @default("RUNNING")
+ startedAt DateTime @default(now())
+ finishedAt DateTime?
+ received Int @default(0)
+ created Int @default(0)
+ updated Int @default(0)
+ unchanged Int @default(0)
+ error String?
+ logs SyncLog[]
+}
+model SyncLog {
+ id String @id @default(cuid())
+ jobId String
+ event String
+ detail String
+ createdAt DateTime @default(now())
+ job SyncJob @relation(fields:[jobId],references:[id],onDelete:Cascade)
+}
+model SyncCursor {
+ id String @id
+ through DateTime
+}
+model JobRequest {
+ id String @id @default(cuid())
+ type String
+ status String @default("PENDING")
+ createdAt DateTime @default(now())
+}
+model AuditLog {
+ id String @id @default(cuid())
+ userId String
+ event String
+ entityId String?
+ createdAt DateTime @default(now())
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ @@index([userId,createdAt])
+}

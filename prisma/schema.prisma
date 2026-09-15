@@ -88,6 +88,10 @@ model ContractingAgency {
  opportunities Opportunity[]
 }
 model Opportunity {
+ detailsHash String?
+ detailsSyncedAt DateTime?
+ detailsRetryAt DateTime?
+ detailsError String?
  id String @id
  agencyId String
  year Int

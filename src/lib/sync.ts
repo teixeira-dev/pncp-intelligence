@@ -5,7 +5,7 @@ import {db} from "./db";
 import {normalizeOpportunity} from "./pncp";
 import {matchOpportunity,normalize} from "./matching";
 import {analyzeDocument} from "./documents";
-import {enrichOpportunity} from "./enrichment";
+import {enrichOpportunity,importPendingDetails} from "./enrichment";
 import {sendMail} from "./mail";
 export async function upsertOpportunity(raw:unknown){
  const n=normalizeOpportunity(raw);
@@ -75,7 +75,11 @@ export async function runSync(){
  }
  const job=await db.syncJob.create({data:{}});console.info(JSON.stringify({event:"PNCP_SYNC_STARTED",jobId:job.id}));const counters={received:0,created:0,updated:0,unchanged:0};
  try{
+ // Clear part of the old backlog before new public API calls consume the quota.
+ await importPendingDetails({limit:10});
  const outcome=await collectPartitions(job.id,counters);
+ const details=await importPendingDetails({limit:40,newest:true});
+ outcome.complete=outcome.complete&&!details.pending;
  for(const c of await db.company.findMany({select:{id:true}}))await refreshCompany(c.id);
  await processAlerts();
  if(outcome.complete)await db.jobRequest.updateMany({where:{id:{in:pending.filter(r=>r.type==="SYNC").map(r=>r.id)}},data:{status:"DONE"}});

@@ -3,5 +3,5 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 [deploy]
 startCommand = "npm run job:sync"
-cronSchedule = "0 * * * *"
+cronSchedule = "*/15 * * * *"
 restartPolicyType = "NEVER"

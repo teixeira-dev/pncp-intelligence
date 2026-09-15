@@ -3,8 +3,8 @@ import {fetchJson,normalizeOpportunity,officialModalities,pageSchema,PNCPError,p
 import {syncError} from "./sync-error";
 type Counters={received:number;created:number;updated:number;unchanged:number};
 const day=86400000;
-export async function collectPartitions(jobId:string,counters:Counters,options:{fetcher?:typeof fetch;sleep?:typeof wait;now?:Date;pageBudget?:number;perModality?:number}={}){
- const sleep=options.sleep??wait,now=options.now??new Date(),deadline=Date.now()+20*60000;
+export async function collectPartitions(jobId:string,counters:Counters,options:{fetcher?:typeof fetch;sleep?:typeof wait;now?:Date;pageBudget?:number;perModality?:number;budgetMs?:number}={}){
+ const sleep=options.sleep??wait,now=options.now??new Date(),deadline=Date.now()+(options.budgetMs??20*60000);
  const cooldown=await db.syncCursor.findUnique({where:{id:"PNCP_COOLDOWN"}});
  if(cooldown&&cooldown.through>now)return {complete:false};
  let partitions=await db.syncPartition.findMany({orderBy:{updatedAt:"asc"}});

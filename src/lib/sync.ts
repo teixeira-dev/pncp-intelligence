@@ -5,7 +5,7 @@ import {db} from "./db";
 import {normalizeOpportunity} from "./pncp";
 import {matchOpportunity,normalize} from "./matching";
 import {analyzeDocument} from "./documents";
-import {enrichOpportunity,importPendingDetails} from "./enrichment";
+import {importPendingDetails} from "./enrichment";
 import {sendMail} from "./mail";
 export async function upsertOpportunity(raw:unknown){
  const n=normalizeOpportunity(raw);
@@ -59,10 +59,6 @@ export async function runSync(){
  if(!result[0].locked)return;
  await db.syncJob.updateMany({where:{status:"RUNNING",startedAt:{lt:new Date(Date.now()-3600000)}},data:{status:"FAILED",finishedAt:new Date(),error:"Processo anterior interrompido."}});
  const pending=await db.jobRequest.findMany({where:{status:"PENDING"},take:100,orderBy:{createdAt:"asc"}});
- for(const request of pending.filter(r=>r.type.startsWith("ENRICH:"))){
- try{await enrichOpportunity(request.type.slice(7));await db.jobRequest.update({where:{id:request.id},data:{status:"DONE"}});}
- catch{await db.jobRequest.update({where:{id:request.id},data:{status:"FAILED"}});console.error(JSON.stringify({event:"ENRICH_FAILED",jobId:request.id}));}
- }
  for(const request of pending.filter(r=>r.type.startsWith("DOCUMENT:"))){
  const [,userId,documentId]=request.type.split(":");
  try{await analyzeDocument(userId,documentId);await db.jobRequest.update({where:{id:request.id},data:{status:"DONE"}});await db.auditLog.create({data:{userId,event:"DOCUMENT_ANALYZED",entityId:documentId}});}
@@ -75,10 +71,18 @@ export async function runSync(){
  }
  const job=await db.syncJob.create({data:{}});console.info(JSON.stringify({event:"PNCP_SYNC_STARTED",jobId:job.id}));const counters={received:0,created:0,updated:0,unchanged:0};
  try{
- // Clear part of the old backlog before new public API calls consume the quota.
- await importPendingDetails({limit:10});
- const outcome=await collectPartitions(job.id,counters);
- const details=await importPendingDetails({limit:40,newest:true});
+ const lastDiscovery=await db.syncCursor.findUnique({where:{id:"PNCP_DISCOVERY_RUN"}});
+ const discover=!lastDiscovery||Date.now()-lastDiscovery.through.getTime()>=3600000;
+ let outcome={complete:false};
+ if(discover){
+ try{outcome=await collectPartitions(job.id,counters,{pageBudget:25,perModality:5,budgetMs:4*60000});}
+ catch(error){console.error(JSON.stringify({event:"PNCP_DISCOVERY_DEFERRED",jobId:job.id,error:syncError(error)}));await db.syncLog.create({data:{jobId:job.id,event:"PNCP_DISCOVERY_DEFERRED",detail:error instanceof Error?error.message.slice(0,400):"Discovery failed"}});}
+ await db.syncCursor.upsert({where:{id:"PNCP_DISCOVERY_RUN"},create:{id:"PNCP_DISCOVERY_RUN",through:new Date()},update:{through:new Date()}});
+ }
+ // Every fourth quarter-hour gives older records a turn to prevent starvation.
+ const prioritize=Math.floor(Date.now()/900000)%4!==0;
+ const details=await importPendingDetails({limit:150,newest:prioritize,budgetMs:8*60000});
+ console.info(JSON.stringify({event:"PNCP_DETAILS_BATCH",...details,prioritized:prioritize}));
  outcome.complete=outcome.complete&&!details.pending;
  for(const c of await db.company.findMany({select:{id:true}}))await refreshCompany(c.id);
  await processAlerts();

@@ -38,15 +38,15 @@ export async function enrichOpportunity(id:string,options:{fetcher?:typeof fetch
  return {items:items.length,documents:documents.filter(d=>d.statusAtivo!==false).length};
 }
 
-export async function importPendingDetails(options:{limit?:number;newest?:boolean;fetcher?:typeof fetch;sleep?:typeof wait}={}){
+export async function importPendingDetails(options:{limit?:number;newest?:boolean;budgetMs?:number;fetcher?:typeof fetch;sleep?:typeof wait}={}){
  const cooldown=await db.syncCursor.findUnique({where:{id:"PNCP_COOLDOWN"}});
  if(cooldown&&cooldown.through>new Date())return {imported:0,pending:true};
  // Existing opportunities are included automatically; no manual click is required.
- const rows=await db.$queryRaw<{id:string}[]>`SELECT id FROM "Opportunity" WHERE ("detailsHash" IS NULL OR "detailsHash" <> "contentHash") AND ("detailsRetryAt" IS NULL OR "detailsRetryAt" <= NOW()) ORDER BY CASE WHEN ${options.newest??false} THEN "discoveredAt" END DESC, "discoveredAt" ASC, id ASC LIMIT ${options.limit??50}`;
- const until=Date.now()+10*60000;let imported=0;
+ const rows=await db.$queryRaw<{id:string}[]>`SELECT id FROM "Opportunity" WHERE ("detailsHash" IS NULL OR "detailsHash" <> "contentHash") AND ("detailsRetryAt" IS NULL OR "detailsRetryAt" <= NOW()) ORDER BY CASE WHEN ${options.newest??false} THEN EXISTS(SELECT 1 FROM "JobRequest" j WHERE j.type='ENRICH:' || "Opportunity".id AND j.status='PENDING') END DESC, CASE WHEN ${options.newest??false} THEN EXISTS(SELECT 1 FROM "Favorite" f WHERE f."opportunityId"="Opportunity".id) END DESC, CASE WHEN ${options.newest??false} THEN "discoveredAt" END DESC, "discoveredAt" ASC, id ASC LIMIT ${options.limit??50}`;
+ const until=Date.now()+(options.budgetMs??10*60000);let imported=0;
  for(const row of rows){
  if(Date.now()>=until)break;
- try{const result=await enrichOpportunity(row.id,options);imported++;console.info(JSON.stringify({event:"PNCP_DETAILS_IMPORTED",opportunityId:row.id,...result}));}
+ try{const result=await enrichOpportunity(row.id,options);imported++;await db.jobRequest.updateMany({where:{type:"ENRICH:"+row.id,status:"PENDING"},data:{status:"DONE"}});console.info(JSON.stringify({event:"PNCP_DETAILS_IMPORTED",opportunityId:row.id,...result}));}
  catch(error){
  const retryAt=error instanceof PNCPError&&error.retryAt?error.retryAt:new Date(Date.now()+30*60000);
  await db.opportunity.update({where:{id:row.id},data:{detailsRetryAt:retryAt,detailsError:syncError(error).kind}});

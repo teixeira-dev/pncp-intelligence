@@ -1,3 +1,4 @@
+import {syncError} from "./sync-error";
 import {Prisma} from "@prisma/client";
 import {db} from "./db";
 import {fetchJson,normalizeOpportunity,pageSchema,publicationUrl,wait,officialModalities} from "./pncp";
@@ -71,7 +72,7 @@ export async function runSync(){
  for(const c of await db.company.findMany({select:{id:true}}))await refreshCompany(c.id);
  await db.jobRequest.updateMany({where:{id:{in:pending.filter(r=>r.type==="MATCH").map(r=>r.id)}},data:{status:"DONE"}});
  }
- const job=await db.syncJob.create({data:{}});const counters={received:0,created:0,updated:0,unchanged:0};
+ const job=await db.syncJob.create({data:{}});console.info(JSON.stringify({event:"PNCP_SYNC_STARTED",jobId:job.id}));const counters={received:0,created:0,updated:0,unchanged:0};
  try{
  const modalities=await officialModalities();
  const end=new Date(),saved=await db.syncCursor.findUnique({where:{id:"PNCP_UPDATES"}});
@@ -85,6 +86,7 @@ export async function runSync(){
  const parsed=pageSchema.parse(await fetchJson(publicationUrl(start,until,modality,page,"atualizacao")));
  for(const raw of parsed.data){const kind=await upsertOpportunity(raw);counters.received++;counters[kind]++;}
  await db.syncJob.update({where:{id:job.id},data:counters});
+ console.info(JSON.stringify({event:"PNCP_PAGE_IMPORTED",jobId:job.id,modality,page,...counters}));
  if(page>=parsed.totalPaginas||parsed.data.length===0)break;
  if(page===10000)throw new Error("PNCP_PAGINATION_LIMIT");
  await wait(350);
@@ -101,7 +103,7 @@ export async function runSync(){
  const message=e instanceof Error?e.message.slice(0,400):"Unknown error";
  await db.syncJob.update({where:{id:job.id},data:{status:"FAILED",finishedAt:new Date(),error:message,...counters}});
  await db.syncLog.create({data:{jobId:job.id,event:"PNCP_SYNC_FAILED",detail:message}});
- console.error(JSON.stringify({event:"PNCP_SYNC_FAILED",jobId:job.id}));throw e;
+ console.error(JSON.stringify({event:"PNCP_SYNC_FAILED",jobId:job.id,...counters,error:syncError(e)}));throw e;
  }
  },{timeout:3300000,maxWait:5000});
 }

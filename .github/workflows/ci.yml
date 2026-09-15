@@ -26,6 +26,7 @@ jobs:
       DATABASE_URL: postgresql://pncp:test-only-password@localhost:5432/pncp_test
       APP_URL: http://localhost:3000
       RUN_INTEGRATION: '1'
+      SETUP_TOKEN_HASH: '3138bb9bc78df27c473ecfd1410f7bd45ebac1f59cf3ff9cfe4db77aab7aedd3'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

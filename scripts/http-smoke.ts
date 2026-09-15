@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {randomBytes} from "node:crypto";
+import {randomBytes,createHash} from "node:crypto";
 import {db} from "../src/lib/db";
 import {passwordHash} from "../src/lib/auth";
 import {upsertOpportunity,refreshCompany,processAlerts} from "../src/lib/sync";
@@ -17,6 +17,12 @@ async function createUser(label:string,role="USER"){
 }
 async function main(){
  assert.equal((await call("companies")).status,401);
+ const setup={token:"1".repeat(64),name:"Test admin",email:"setup-"+suffix+"@example.test",password:secret};
+ assert.equal((await call("auth/bootstrap","POST",{...setup,token:"2".repeat(64)})).status,403);
+ assert.equal((await call("auth/bootstrap","POST",setup)).status,200);
+ const initial=await db.user.findUniqueOrThrow({where:{email:setup.email},include:{memberships:true}});users.push(initial.id);orgs.push(initial.memberships[0].organizationId);
+ assert.equal((await call("auth/bootstrap","POST",setup)).status,409);
+
  const a=await createUser("A"),b=await createUser("B");
  assert.equal((await call("admin","GET",undefined,a.cookie)).status,403);
  const invalid=await fetch(base+"/api/companies",{method:"POST",headers:{"Content-Type":"application/json",Cookie:a.cookie,Origin:"https://untrusted.example"},body:"{}"});assert.equal(invalid.status,403);
@@ -44,6 +50,14 @@ async function main(){
  assert.equal((await call("notifications/all","PATCH",{},a.cookie)).status,200);
  assert.equal((await call("auth/logout","POST",{},a.cookie)).status,200);
  assert.equal((await call("companies","GET",undefined,a.cookie)).status,401);
+ const token=randomBytes(32).toString("hex"),newPassword=randomBytes(18).toString("hex");
+ await db.passwordReset.create({data:{id:createHash("sha256").update(token).digest("hex"),userId:b.u.id,expiresAt:new Date(Date.now()+60000)}});
+ assert.equal((await call("auth/reset","POST",{token,password:newPassword})).status,200);
+ assert.equal((await call("auth/reset","POST",{token,password:secret})).status,400);
+ assert.equal((await call("companies","GET",undefined,b.cookie)).status,401);
+ assert.equal((await call("auth/login","POST",{email:b.u.email,password:secret})).status,401);
+ assert.equal((await call("auth/login","POST",{email:b.u.email,password:newPassword})).status,200);
+ const csv=await call("reports?group=state&format=csv","GET",undefined,(await createUser("Reporter")).cookie);assert.equal(csv.status,200);assert.match(csv.headers.get("content-type")??"",/text\/csv/);
  console.log("HTTP_SMOKE_PASSED: login, CSRF, authorization, cross-user isolation, CRUD, search/sorts, favorite, tracking, AI unavailable, alerts, notification deduplication and logout.");
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{

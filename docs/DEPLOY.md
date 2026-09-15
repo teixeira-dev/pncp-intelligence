@@ -32,3 +32,6 @@ Adicione o hostname escolhido no Railway, copie exatamente os registros DNS info
 
 ## Migrations e rollback
 Faça backup verificável antes de atualizar. Revise SQL destrutivo separadamente. Prefira alterações compatíveis com a versão anterior. Rollback da imagem não reverte schema: use migration corretiva ou restauração testada em manutenção. Nunca execute `migrate reset` em produção. A migration inicial cria tabelas e índices; não remove dados existentes.
+
+## Primeiro acesso por convite
+Alternativa ao comando administrativo: configurar SETUP_TOKEN_HASH com o SHA-256 de um token aleatório de 32 bytes. Entregar ao proprietário o link /primeiro-acesso#TOKEN por canal privado. O token não é incluído em requisições de navegação nem no repositório. O formulário envia o token para validação e só cria a conta se o banco não tiver usuários; um lock transacional impede duas configurações simultâneas. Depois do uso, o endpoint deixa de aceitar configurações mesmo que o hash permaneça no ambiente. Remova a variável após concluir a configuração.

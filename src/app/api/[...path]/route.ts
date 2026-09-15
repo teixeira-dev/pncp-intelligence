@@ -99,6 +99,13 @@ async function handler(req:Request,context:{params:Promise<{path:string[]}>}){
  }
  if(id&&method==="POST"){
  const o=await db.opportunity.findUnique({where:{id},select:{id:true}});if(!o)throw new HttpError(404,"Oportunidade não encontrada.");
+ if(action==="document-analysis"){
+ if(process.env.AI_PROVIDER!=="openai"||!process.env.AI_API_KEY||!process.env.AI_MODEL)throw new HttpError(503,"Provedor de IA não configurado.");
+ const {documentId}=z.object({documentId:z.string().cuid()}).strict().parse(await body(req));
+ if(!await db.opportunityDocument.findFirst({where:{id:documentId,opportunityId:id}}))throw new HttpError(404,"Documento não encontrado.");
+ await rateLimit("document-ai:"+userId,3,60);await db.jobRequest.create({data:{type:"DOCUMENT:"+userId+":"+documentId}});
+ await audit(userId,"DOCUMENT_ANALYSIS_REQUESTED",documentId);return reply({message:"Análise do PDF solicitada. O próximo job processará até 8 trechos; veja o resultado em Análises."});
+ }
  if(action==="refresh"){await rateLimit("enrich:"+userId,5,60);await db.jobRequest.create({data:{type:"ENRICH:"+id}});return reply({message:"Importação solicitada. O próximo job buscará itens e documentos oficiais."});}
  if(action==="favorite"){await db.favorite.upsert({where:{userId_opportunityId:{userId,opportunityId:id}},create:{userId,opportunityId:id},update:{}});await audit(userId,"FAVORITED",id);return reply({ok:true});}
  if(action==="tracking"){const {status}=z.object({status:z.enum(["NOVA","ANALISANDO","INTERESSADO","PARTICIPANDO","DESCARTADA","GANHA","PERDIDA"])}).strict().parse(await body(req));await db.opportunityTracking.upsert({where:{userId_opportunityId:{userId,opportunityId:id}},create:{userId,opportunityId:id,status},update:{status}});await audit(userId,"STATUS_"+status,id);return reply({ok:true});}

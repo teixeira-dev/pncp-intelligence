@@ -3,15 +3,15 @@
 Código em homologação na PR #1. Não é a conclusão de todos os requisitos do escopo original.
 
 ## Evidências locais
-Instalação, lint, TypeScript, build Next.js e 13 testes unitários passaram na primeira rodada de correções. Quatro testes PostgreSQL dependem do CI. As verificações são repetidas quando o código muda; o commit final deve ser conferido no Actions.
+Instalação, lint, TypeScript, build Next.js e 13 testes unitários passaram na primeira rodada de correções. Quatro testes PostgreSQL passaram no CI do commit 8963fbb. A rodada posterior identificou um problema no dado de teste HTTP, corrigido para a próxima execução. As verificações são repetidas quando o código muda; o commit final deve ser conferido no Actions.
 
 ## Entregas adicionadas
 Paginação e ordenação SQL sem carregar todos os IDs, lockfile, dependências atualizadas, consulta PNCP por atualização, modalidades oficiais, importação de itens e metadados de documentos sob demanda, documentação e smoke HTTP com isolamento de contas.
 
 ## Pendências materiais
 - Sincronização PNCP real completa: API apresentou timeout e 503.
-- Extração e análise de PDF/OCR, referências por trecho e cache de documento.
-- Relatórios completos e exportações (somente distribuição por UF inicial).
+- OCR de PDFs digitalizados; análise real com provider ainda depende de credenciais. Extração textual limitada, referências e cache de PDF já implementados.
+- Relatórios em CSV implementados por UF, órgão, modalidade, mês e faixa de valor; PDF/Excel não são oferecidos.
 - Testes de navegador e inspeção visual mobile.
 - Providers reais de IA/SMTP e domínio próprio.
 - Homologação do deploy web, banco e cron.

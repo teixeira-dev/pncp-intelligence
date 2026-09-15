@@ -2,6 +2,7 @@ import {Prisma} from "@prisma/client";
 import {db} from "./db";
 import {fetchJson,normalizeOpportunity,pageSchema,publicationUrl,wait,officialModalities} from "./pncp";
 import {matchOpportunity,normalize} from "./matching";
+import {analyzeDocument} from "./documents";
 import {enrichOpportunity} from "./enrichment";
 import {sendMail} from "./mail";
 export async function upsertOpportunity(raw:unknown){
@@ -59,6 +60,11 @@ export async function runSync(){
  for(const request of pending.filter(r=>r.type.startsWith("ENRICH:"))){
  try{await enrichOpportunity(request.type.slice(7));await db.jobRequest.update({where:{id:request.id},data:{status:"DONE"}});}
  catch{await db.jobRequest.update({where:{id:request.id},data:{status:"FAILED"}});console.error(JSON.stringify({event:"ENRICH_FAILED",jobId:request.id}));}
+ }
+ for(const request of pending.filter(r=>r.type.startsWith("DOCUMENT:"))){
+ const [,userId,documentId]=request.type.split(":");
+ try{await analyzeDocument(userId,documentId);await db.jobRequest.update({where:{id:request.id},data:{status:"DONE"}});await db.auditLog.create({data:{userId,event:"DOCUMENT_ANALYZED",entityId:documentId}});}
+ catch{await db.jobRequest.update({where:{id:request.id},data:{status:"FAILED"}});await db.auditLog.create({data:{userId,event:"DOCUMENT_ANALYSIS_FAILED",entityId:documentId}}).catch(()=>{});console.error(JSON.stringify({event:"DOCUMENT_ANALYSIS_FAILED",jobId:request.id}));}
  }
  // Profile changes should still be processed when PNCP is down.
  if(pending.some(r=>r.type==="MATCH")){

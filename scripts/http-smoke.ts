@@ -10,7 +10,7 @@ async function call(path:string,method="GET",data?:unknown,cookie=""){
  return fetch(base+"/api/"+path,{method,headers:{"Content-Type":"application/json",Origin:base,Cookie:cookie},...(data!==undefined?{body:JSON.stringify(data)}:{})});
 }
 async function createUser(label:string,role="USER"){
- const u=await db.user.create({data:{email:label+suffix+"@example.test",name:label,passwordHash:await passwordHash(secret),role,memberships:{create:{organization:{create:{name:label+suffix}}}}},include:{memberships:true}});
+ const u=await db.user.create({data:{email:label.toLowerCase()+suffix+"@example.test",name:label,passwordHash:await passwordHash(secret),role,memberships:{create:{organization:{create:{name:label+suffix}}}}},include:{memberships:true}});
  users.push(u.id);orgs.push(u.memberships[0].organizationId);
  const r=await call("auth/login","POST",{email:u.email,password:secret});assert.equal(r.status,200);
  const cookie=r.headers.get("set-cookie")?.split(";")[0];assert(cookie);return {u,cookie};

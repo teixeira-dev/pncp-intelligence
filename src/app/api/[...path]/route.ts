@@ -33,6 +33,19 @@ async function handler(req:Request,context:{params:Promise<{path:string[]}>}){
  await tx.user.create({data:{name:parsed.name,email:parsed.email,passwordHash:hashed,role:"ADMIN",memberships:{create:{organization:{create:{name:parsed.name}}}}}});
  });return reply({ok:true});
  }
+ if(id==="register"){
+ const parsed=z.object({name:z.string().trim().min(2).max(150),email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),password,confirmPassword:z.string()}).strict().refine(v=>v.password===v.confirmPassword,{message:"As senhas não coincidem.",path:["confirmPassword"]}).parse(b);
+ await rateLimit("register:global",100,60);
+ await rateLimit("register:"+parsed.email,5,60);
+ const hashed=await passwordHash(parsed.password);
+ await db.$transaction(async tx=>{
+ await tx.$executeRaw`SELECT pg_advisory_xact_lock(70421017)`;
+ if(!await tx.user.findFirst({where:{role:"ADMIN"}}))throw new HttpError(503,"O cadastro estará disponível após a configuração inicial do sistema.");
+ if(await tx.user.findUnique({where:{email:parsed.email}}))return;
+ await tx.user.create({data:{name:parsed.name,email:parsed.email,passwordHash:hashed,role:"USER",memberships:{create:{organization:{create:{name:parsed.name}}}},audits:{create:{event:"ACCOUNT_CREATED"}}}});
+ });
+ return reply({message:"Solicitação concluída. Entre com seu e-mail e senha. Se você já tinha uma conta, use sua senha anterior ou recupere o acesso."},201);
+ }
  if(id==="login"){const c=credentials.parse(b);await login(c.email,c.password);return reply({ok:true});}
  if(id==="logout"){await logout();return reply({ok:true});}
  if(id==="recover"){

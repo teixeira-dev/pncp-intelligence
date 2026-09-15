@@ -70,3 +70,6 @@ Validação Zod no servidor, autorização por organização/usuário, sessões 
 - Base vazia: verificar cron e logs PNCP.
 - Sem recomendações: configurar termos e aguardar processamento do perfil.
 - IA/e-mail indisponíveis: configurar provedores e conferir logs sem secrets.
+
+### Cadastro público
+A tela `/cadastro`, acessível pelo link “Criar conta” no login, cria usuários comuns com uma organização própria. Exige nome, e-mail, senha de pelo menos 12 caracteres e confirmação. A configuração inicial do administrador deve estar concluída. O cadastro usa transação, controle de frequência e resposta genérica para e-mails existentes; não altera contas já cadastradas. Após cadastrar, o usuário entra pelo login. Esta versão não verifica a titularidade do e-mail por mensagem; SMTP é utilizado na recuperação de senha quando configurado.

@@ -23,6 +23,17 @@ async function main(){
  const initial=await db.user.findUniqueOrThrow({where:{email:setup.email},include:{memberships:true}});users.push(initial.id);orgs.push(initial.memberships[0].organizationId);
  assert.equal((await call("auth/bootstrap","POST",setup)).status,409);
 
+ const registration={name:"New user",email:"new-"+suffix+"@example.test",password:secret,confirmPassword:secret};
+ assert.equal((await call("auth/register","POST",{...registration,role:"ADMIN"})).status,400);
+ assert.equal((await call("auth/register","POST",{...registration,confirmPassword:"different"})).status,400);
+ assert.equal((await call("auth/register","POST",registration)).status,201);
+ const registered=await db.user.findUniqueOrThrow({where:{email:registration.email},include:{memberships:true}});
+ users.push(registered.id);orgs.push(registered.memberships[0].organizationId);
+ assert.equal(registered.role,"USER");assert.equal(registered.memberships.length,1);
+ assert.equal((await call("auth/register","POST",registration)).status,201);
+ assert.equal(await db.user.count({where:{email:registration.email}}),1);
+ const registeredLogin=await call("auth/login","POST",{email:registration.email,password:secret});assert.equal(registeredLogin.status,200);
+ assert.equal((await call("admin","GET",undefined,registeredLogin.headers.get("set-cookie")!.split(";")[0])).status,403);
  const a=await createUser("A"),b=await createUser("B");
  assert.equal((await call("admin","GET",undefined,a.cookie)).status,403);
  const invalid=await fetch(base+"/api/companies",{method:"POST",headers:{"Content-Type":"application/json",Cookie:a.cookie,Origin:"https://untrusted.example"},body:"{}"});assert.equal(invalid.status,403);

@@ -25,3 +25,12 @@ test("login, company, filters, alert, responsive dashboard and logout",async({pa
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:"test-results/dashboard-mobile.png",fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
  await page.getByRole("button",{name:"Abrir menu",exact:true}).click();await page.getByRole("button",{name:"Sair",exact:true}).click();await expect(page).toHaveURL(/\/login/);
 });
+test("login links to accessible registration form",async({page})=>{
+ await page.goto("/login");await page.getByRole("link",{name:"Criar conta",exact:true}).click();
+ await expect(page).toHaveURL(/\/cadastro/);
+ await expect(page.getByLabel("Nome completo",{exact:true})).toBeVisible();
+ await expect(page.getByLabel("Confirmar senha",{exact:true})).toHaveAttribute("minlength","12");
+ await page.setViewportSize({width:390,height:844});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
+ await page.getByRole("link",{name:"Voltar ao login",exact:true}).click();await expect(page).toHaveURL(/\/login/);
+});

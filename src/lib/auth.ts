@@ -20,10 +20,31 @@ export async function rateLimit(key:string,limit:number,minutes:number){
  return (await tx.rateLimit.findUniqueOrThrow({where:{id}})).count;
  });if(count>limit)throw new HttpError(429,"Muitas tentativas. Aguarde alguns minutos.");
 }
+// Parse a single serialized HTTP origin, never a URL containing credentials or a path.
+function parseOrigin(value:string|null){
+ if(!value||/[\s,\\]/.test(value))return null;
+ try{const u=new URL(value);if(!["http:","https:"].includes(u.protocol)||u.username||u.password||u.search||u.hash||u.pathname!=="/"||value.endsWith("/"))return null;return u.origin;}catch{return null;}
+}
+function proxyOrigin(host:string|null,proto:string|null){
+ if(!host||!proto||!["http","https"].includes(proto)||/[\s,/@?#\\]/.test(host))return null;
+ return parseOrigin(proto+"://"+host);
+}
 export function verifyOrigin(req:Request){
  const configured=process.env.APP_URL;
  if(!configured)throw new HttpError(503,"APP_URL não configurada.");
- if(req.headers.get("origin")!==new URL(configured).origin)throw new HttpError(403,"Origem não permitida.");
+ let appOrigin:string|null=null;
+ try{const u=new URL(configured);if(!u.username&&!u.password)appOrigin=parseOrigin(u.origin);}catch{}
+ if(!appOrigin)throw new HttpError(503,"APP_URL inválida.");
+ const origin=parseOrigin(req.headers.get("origin"));
+ if(!origin)throw new HttpError(403,"Origem não permitida.");
+ // APP_URL remains trusted even without proxy headers (including local development).
+ if(origin===appOrigin)return;
+ // Never trust a host merely because the request supplies it. Railway's public
+ // domain is injected by the platform, not inferred from Host or a wildcard.
+ const railwayOrigin=proxyOrigin(process.env.RAILWAY_PUBLIC_DOMAIN??null,"https");
+ const forwarded=proxyOrigin(req.headers.get("x-forwarded-host"),req.headers.get("x-forwarded-proto"));
+ if(railwayOrigin&&forwarded===railwayOrigin&&origin===forwarded)return;
+ throw new HttpError(403,"Origem não permitida.");
 }
 export async function login(email:string,password:string){
  await rateLimit("login:"+email,10,15);

@@ -35,3 +35,8 @@ Faça backup verificável antes de atualizar. Revise SQL destrutivo separadament
 
 ## Primeiro acesso por convite
 Alternativa ao comando administrativo: configurar SETUP_TOKEN_HASH com o SHA-256 de um token aleatório de 32 bytes. Entregar ao proprietário o link /primeiro-acesso#TOKEN por canal privado. O token não é incluído em requisições de navegação nem no repositório. O formulário envia o token para validação e só cria a conta se o banco não tiver usuários; um lock transacional impede duas configurações simultâneas. Depois do uso, o endpoint deixa de aceitar configurações mesmo que o hash permaneça no ambiente. Remova a variável após concluir a configuração.
+
+### Origem/CSRF atrás do proxy Railway
+`APP_URL` continua sendo uma origem confiável, inclusive `http://localhost:3000` em desenvolvimento. Para o domínio público do Railway, a validação também aceita a origem HTTPS de `RAILWAY_PUBLIC_DOMAIN` quando os headers `Origin`, `x-forwarded-host` e `x-forwarded-proto` coincidem exatamente após normalização. Essa variável deve conter somente o hostname atribuído ao serviço, sem esquema ou caminho (neste ambiente: `pncp-intelligence.up.railway.app`). O Railway normalmente fornece essa variável; se ausente, use `APP_URL` com a URL pública correta. Domínios personalizados devem usar `APP_URL`.
+
+Não são aceitos hosts arbitrários, curingas de `railway.app`, listas separadas por vírgula, credenciais em URLs, caminhos em Origin ou fallback de proxy sem domínio configurado no servidor. Não inferimos confiança apenas de `Host` ou de headers fornecidos pelo cliente. A validação preserva o acesso por APP_URL mesmo sem headers de proxy. Referência dos headers: https://docs.railway.com/networking/public-networking/specs-and-limits.

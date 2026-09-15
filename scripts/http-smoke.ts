@@ -42,16 +42,20 @@ async function main(){
  assert.deepEqual(await (await call("companies/"+company.id,"GET",undefined,b.cookie)).json(),[]);
  assert.equal((await call("companies/"+company.id,"PATCH",{legalName:"Hacked",cnpj:"11222333000181"},b.cookie)).status,404);
  assert.equal((await call("companies/"+company.id,"DELETE",undefined,b.cookie)).status,404);
- tenderId="SMOKE-"+suffix;
+ tenderId="11222333000181-1-"+String(parseInt(suffix.slice(0,6),16))+"/2026";
  await upsertOpportunity({numeroControlePNCP:tenderId,anoCompra:2026,sequencialCompra:1,numeroCompra:suffix,objetoCompra:"Material hospitalar "+suffix,modalidadeId:6,modalidadeNome:"Pregão eletrônico",situacaoCompraNome:"Divulgada no PNCP",dataPublicacaoPncp:new Date().toISOString(),orgaoEntidade:{cnpj:"11222333000181",razaoSocial:"Teste de integração"},unidadeOrgao:{municipioNome:"Recife",ufSigla:"PE"}});
  await refreshCompany(company.id);
+ for(const routeId of [encodeURIComponent(tenderId),tenderId]){
+ const detail=await call("opportunities/"+routeId,"GET",undefined,a.cookie);assert.equal(detail.status,200);assert.equal((await detail.json()).id,tenderId);
+ }
+
  for(const sort of ["recent","score","relevance","deadline","value_desc","value_asc"]){
  const response=await call("opportunities?state=PE&q="+suffix+"&sort="+sort,"GET",undefined,a.cookie);assert.equal(response.status,200);assert.equal((await response.json()).total,1);
  }
- assert.equal((await call("opportunities/"+tenderId+"/favorite","POST",{},a.cookie)).status,200);
+ assert.equal((await call("opportunities/"+encodeURIComponent(tenderId)+"/favorite","POST",{},a.cookie)).status,200);
  assert.equal((await (await call("opportunities?favorite=1","GET",undefined,b.cookie)).json()).total,0);
- assert.equal((await call("opportunities/"+tenderId+"/tracking","POST",{status:"INTERESSADO"},a.cookie)).status,200);
- assert.equal((await call("opportunities/"+tenderId+"/analyze","POST",{},a.cookie)).status,503);
+ assert.equal((await call("opportunities/"+encodeURIComponent(tenderId)+"/tracking","POST",{status:"INTERESSADO"},a.cookie)).status,200);
+ assert.equal((await call("opportunities/"+encodeURIComponent(tenderId)+"/analyze","POST",{},a.cookie)).status,503);
  const alert=await call("alerts","POST",{name:"Teste hospital",companyId:company.id,keywords:["hospitalar"],minScore:80},a.cookie);assert.equal(alert.status,200);
  const alertRow=await alert.json();
  assert.equal((await call("alerts/"+alertRow.id,"DELETE",undefined,b.cookie)).status,404);

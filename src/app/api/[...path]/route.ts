@@ -1,3 +1,4 @@
+import {opportunityRoute} from "@/lib/opportunity-route";
 import {NextResponse} from "next/server";
 import {z,ZodError} from "zod";
 import {Prisma} from "@prisma/client";
@@ -16,7 +17,7 @@ const reply=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:
 async function body(req:Request){if(Number(req.headers.get("content-length")??0)>50000)throw new HttpError(413,"Pedido muito grande.");const text=await req.text();if(text.length>50000)throw new HttpError(413,"Pedido muito grande.");try{return JSON.parse(text);}catch{throw new HttpError(400,"JSON inválido.");}}
 async function handler(req:Request,context:{params:Promise<{path:string[]}>}){
  try{
- const {path}=await context.params;const [resource,id,action]=path;const method=req.method;
+ const {path}=await context.params;const [resource]=path;const {id,action}=resource==="opportunities"?opportunityRoute(path.slice(1)):{id:path[1],action:path[2]};const method=req.method;
  if(method!=="GET")verifyOrigin(req);
  if(resource==="auth"){
  if(method!=="POST")throw new HttpError(405,"Método não permitido.");
@@ -98,6 +99,10 @@ async function handler(req:Request,context:{params:Promise<{path:string[]}>}){
  await audit(userId,"COMPANY_UPDATED",company.id);return reply(company);
  }
  if(method==="DELETE"&&id){await db.company.delete({where:{id}});await audit(userId,"COMPANY_DELETED",id);return reply({ok:true});}
+ }
+ if(resource==="opportunity-filters"&&method==="GET"){
+ const modalities=await db.opportunity.findMany({distinct:["modality"],select:{modality:true,modalityName:true},orderBy:{modality:"asc"}});
+ return reply({modalities});
  }
  if(resource==="opportunities"){
  if(method==="GET"&&!id)return reply(await searchOpportunities(userId,new URL(req.url).searchParams));

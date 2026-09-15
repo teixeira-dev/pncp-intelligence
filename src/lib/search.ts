@@ -4,7 +4,7 @@ import {db} from "./db";
 const calendarDate=z.string().refine(v=>!v||(/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v),"Data inválida.").default("");
 export const querySchema=z.object({
  q:z.string().max(200).default(""),state:z.string().regex(/^([A-Za-z]{2})?$/).default(""),city:z.string().max(100).default(""),agency:z.string().max(100).default(""),
- modality:z.coerce.number().int().min(0).max(20).default(0),status:z.enum(["","open","closed"]).default(""),
+ modality:z.coerce.number().int().min(0).max(20).default(0),status:z.enum(["","open","closed","unknown"]).default(""),
  favorite:z.enum(["","1"]).default(""),recommended:z.enum(["","1"]).default(""),minScore:z.coerce.number().int().min(0).max(100).default(0),
  min:z.string().regex(/^(\d{1,16}(\.\d{1,2})?)?$/).default(""),max:z.string().regex(/^(\d{1,16}(\.\d{1,2})?)?$/).default(""),
  from:calendarDate,to:calendarDate,deadline:calendarDate,
@@ -28,9 +28,10 @@ export async function searchOpportunities(userId:string,params:URLSearchParams){
  if(q.to)filters.push(Prisma.sql`o."publishedAt"<=${new Date(q.to+"T23:59:59.999-03:00")}`);
  if(q.deadline)filters.push(Prisma.sql`o."closesAt"<=${new Date(q.deadline+"T23:59:59.999-03:00")}`);
  if(q.status==="open")filters.push(Prisma.sql`o."closesAt">${new Date()}`);
+ if(q.status==="unknown")filters.push(Prisma.sql`o."closesAt" IS NULL`);
  if(q.status==="closed")filters.push(Prisma.sql`o."closesAt"<=${new Date()}`);
  if(q.favorite)filters.push(Prisma.sql`EXISTS(SELECT 1 FROM "Favorite" f WHERE f."opportunityId"=o.id AND f."userId"=${userId})`);
- if(q.recommended||q.minScore)filters.push(Prisma.sql`m.score>=${q.minScore||70}`);
+ if(q.recommended||q.minScore)filters.push(Prisma.sql`m.score>=${Math.max(q.minScore,q.recommended?70:0)}`);
  if(q.q)filters.push(Prisma.sql`(${vector} @@ websearch_to_tsquery('portuguese',${q.q}) OR o.id ILIKE ${pattern(q.q)} OR o."number" ILIKE ${pattern(q.q)} OR a.name ILIKE ${pattern(q.q)} OR EXISTS(SELECT 1 FROM "OpportunityItem" i WHERE i."opportunityId"=o.id AND i.description ILIKE ${pattern(q.q)}))`);
  const source=Prisma.sql`FROM "Opportunity" o JOIN "ContractingAgency" a ON a.id=o."agencyId"
  LEFT JOIN LATERAL (SELECT MAX(om.score) AS score FROM "OpportunityMatch" om JOIN "Company" c ON c.id=om."companyId" WHERE om."opportunityId"=o.id AND EXISTS(SELECT 1 FROM "Membership" ms WHERE ms."organizationId"=c."organizationId" AND ms."userId"=${userId})) m ON TRUE

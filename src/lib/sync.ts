@@ -1,7 +1,8 @@
+import {collectPartitions} from "./sync-collector";
 import {syncError} from "./sync-error";
 import {Prisma} from "@prisma/client";
 import {db} from "./db";
-import {fetchJson,normalizeOpportunity,pageSchema,publicationUrl,wait,officialModalities} from "./pncp";
+import {normalizeOpportunity} from "./pncp";
 import {matchOpportunity,normalize} from "./matching";
 import {analyzeDocument} from "./documents";
 import {enrichOpportunity} from "./enrichment";
@@ -74,31 +75,11 @@ export async function runSync(){
  }
  const job=await db.syncJob.create({data:{}});console.info(JSON.stringify({event:"PNCP_SYNC_STARTED",jobId:job.id}));const counters={received:0,created:0,updated:0,unchanged:0};
  try{
- const modalities=await officialModalities();
- const end=new Date(),saved=await db.syncCursor.findUnique({where:{id:"PNCP_UPDATES"}});
- const days=Math.max(1,Math.min(30,Number(process.env.PNCP_INITIAL_DAYS)||7));
- let start=saved?new Date(saved.through.getTime()-2*86400000):new Date(end.getTime()-days*86400000);
- // Updates endpoint covers changes to old publications too; overlap protects date boundaries.
- while(start<=end){
- const until=new Date(Math.min(end.getTime(),start.getTime()+6*86400000));
- for(const {id:modality} of modalities){
- for(let page=1;page<=10000;page++){
- const parsed=pageSchema.parse(await fetchJson(publicationUrl(start,until,modality,page,"atualizacao")));
- for(const raw of parsed.data){const kind=await upsertOpportunity(raw);counters.received++;counters[kind]++;}
- await db.syncJob.update({where:{id:job.id},data:counters});
- console.info(JSON.stringify({event:"PNCP_PAGE_IMPORTED",jobId:job.id,modality,page,...counters}));
- if(page>=parsed.totalPaginas||parsed.data.length===0)break;
- if(page===10000)throw new Error("PNCP_PAGINATION_LIMIT");
- await wait(350);
- }await wait(350);
- }
- await db.syncCursor.upsert({where:{id:"PNCP_UPDATES"},create:{id:"PNCP_UPDATES",through:until},update:{through:until}});
- start=new Date(until.getTime()+86400000);
- }
+ const outcome=await collectPartitions(job.id,counters);
  for(const c of await db.company.findMany({select:{id:true}}))await refreshCompany(c.id);
  await processAlerts();
- await db.jobRequest.updateMany({where:{id:{in:pending.filter(r=>r.type==="SYNC").map(r=>r.id)}},data:{status:"DONE"}});
- await db.syncJob.update({where:{id:job.id},data:{status:"SUCCESS",finishedAt:new Date(),...counters}});
+ if(outcome.complete)await db.jobRequest.updateMany({where:{id:{in:pending.filter(r=>r.type==="SYNC").map(r=>r.id)}},data:{status:"DONE"}});
+ await db.syncJob.update({where:{id:job.id},data:{status:outcome.complete?"SUCCESS":"PARTIAL",finishedAt:new Date(),error:outcome.complete?null:"Coleta parcial; progresso salvo para a próxima execução.",...counters}});
  }catch(e){
  const message=e instanceof Error?e.message.slice(0,400):"Unknown error";
  await db.syncJob.update({where:{id:job.id},data:{status:"FAILED",finishedAt:new Date(),error:message,...counters}});

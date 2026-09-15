@@ -267,3 +267,13 @@ model AuditLog {
  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
  @@index([userId,createdAt])
 }
+
+model SyncPartition {
+ modality Int @id
+ through DateTime?
+ windowStart DateTime?
+ windowEnd DateTime?
+ nextPage Int @default(1)
+ retryAt DateTime?
+ updatedAt DateTime @updatedAt
+}

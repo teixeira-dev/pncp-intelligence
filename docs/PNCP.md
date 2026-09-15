@@ -31,3 +31,12 @@ Solicitação na oportunidade gera job. O cron busca itens/documentos e só subs
 
 ## Homologação externa
 Os contratos e modalidades foram consultados com sucesso. As tentativas de consultar contratações durante o desenvolvimento tiveram timeout e HTTP 503. Isso não comprova uma coleta completa funcionando. Verificar uma sincronização bem-sucedida em produção antes de declarar dados atualizados.
+
+## Retomada por modalidade e página
+A tabela `SyncPartition` mantém janela fixa, próxima página, último período concluído e próxima tentativa por modalidade. Cada página e seu checkpoint são gravados juntos, em transação. Uma falha conserva a página pendente; registros já confirmados não são reinseridos. Janelas de até sete datas mantêm sobreposição de dois dias ao iniciar um novo período, pois a paginação da fonte pode mudar durante a coleta. O cursor legado permanece intacto, mas o novo coletor usa partições independentes.
+
+Limites por execução: 100 páginas, 10 por modalidade e 20 minutos para iniciar novas consultas. Chamadas são sequenciais e separadas por pelo menos dois segundos. Há até três tentativas, timeout de 45 segundos por chamada, espera de 5/10 segundos em falhas transitórias e 30/60 segundos para HTTP 429 sem Retry-After. Retry-After aceita segundos ou data HTTP; se exceder 60 segundos, a chamada é adiada para outra execução sem esperar menos que o servidor pediu. O cooldown é persistido e bloqueia novas chamadas no próximo job.
+
+Falha individual mantém sua partição pendente e permite trabalhar nas demais, exceto durante cooldown global. HTTP 422 não é interpretado como resposta vazia nem ignorado: modalidade, página e janela ficam nos logs para diagnosticar a requisição. O catálogo de modalidades é reaproveitado por até sete dias; em falha transitória, o catálogo já persistido permanece utilizável. A execução termina como `PARTIAL` quando há pendências ou limites atingidos. Matching e alertas processam os dados disponíveis mesmo após uma coleta parcial. `SUCCESS` exige que todas as partições da rodada sejam concluídas; indisponibilidade externa continua podendo impedir a carga completa.
+
+Antes de atualizar o coletor em produção, executar `npm run db:migrate` para criar `SyncPartition`. A migration é aditiva e não remove licitações ou cursores anteriores.

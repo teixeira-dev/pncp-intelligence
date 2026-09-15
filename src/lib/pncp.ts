@@ -11,18 +11,38 @@ const official=z.object({
 }).passthrough();
 export const pageSchema=z.object({data:z.array(official),totalPaginas:z.number().int().nonnegative()}).passthrough();
 export const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms));
-export async function fetchJson(url:URL,fetcher:typeof fetch=fetch){
+export class PNCPError extends Error {
+ constructor(public status:number,public retryAt?:Date){super("PNCP_HTTP_"+status);}
+}
+export function retryAfter(value:string|null,now=Date.now()){
+ if(!value)return null;
+ const milliseconds=/^\d+$/.test(value.trim())?Number(value)*1000:Date.parse(value)-now;
+ return Number.isFinite(milliseconds)&&milliseconds>=0?new Date(now+milliseconds):null;
+}
+export async function fetchJson(url:URL,fetcher:typeof fetch=fetch,sleep=wait){
  let last:unknown;
  for(let attempt=0;attempt<3;attempt++){
  try{
  const r=await fetcher(url,{signal:AbortSignal.timeout(45000),headers:{accept:"application/json"}});
  if(r.status===204)return {data:[],totalPaginas:0};
- if(!r.ok){if(r.status!==429&&r.status<500)throw new NonRetryable("PNCP_HTTP_"+r.status);throw new Error("PNCP_HTTP_"+r.status);}
+ if(!r.ok){
+ const retryAt=retryAfter(r.headers.get("retry-after"))??undefined;
+ await r.body?.cancel();
+ throw new PNCPError(r.status,retryAt);
+ }
  return await r.json();
- }catch(e){if(e instanceof NonRetryable)throw e;last=e;if(attempt<2)await wait(500*2**attempt);}
+ }catch(e){
+ if(e instanceof PNCPError&&e.status!==429&&e.status<500)throw e;
+ last=e;
+ if(attempt<2){
+ const delay=e instanceof PNCPError&&e.retryAt?Math.max(0,e.retryAt.getTime()-Date.now()):e instanceof PNCPError&&e.status===429?30000*2**attempt:5000*2**attempt;
+ // A long server cooldown belongs to a later scheduled run; never retry early.
+ if(delay>60000)throw e;
+ await sleep(delay);
+ }
+ }
  }throw last;
 }
-class NonRetryable extends Error {}
 export function normalizeOpportunity(input:unknown){
  const r=official.parse(input);
  const date=(v:string|null|undefined)=>{if(!v)return null;const d=new Date(/Z$|[+-]\d{2}:\d{2}$/.test(v)?v:v+"-03:00");if(!Number.isFinite(d.getTime()))throw new Error("PNCP_INVALID_DATE");return d;};

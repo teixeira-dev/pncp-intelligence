@@ -19,7 +19,7 @@ export async function searchOpportunities(userId:string,params:URLSearchParams){
  const vector=Prisma.sql`to_tsvector('portuguese',coalesce(o."object",'') || ' ' || coalesce(o."description",''))`;
  const rank=q.q?Prisma.sql`ts_rank(${vector},websearch_to_tsquery('portuguese',${q.q}))`:Prisma.sql`0`;
  if(q.state)filters.push(Prisma.sql`o."state"=${q.state.toUpperCase()}`);
- if(q.city)filters.push(Prisma.sql`o."city" ILIKE ${pattern(q.city)}`);
+ if(q.city)filters.push(Prisma.sql`LOWER(o."city") = LOWER(${q.city})`);
  if(q.agency)filters.push(Prisma.sql`a."name" ILIKE ${pattern(q.agency)}`);
  if(q.modality)filters.push(Prisma.sql`o."modality"=${q.modality}`);
  if(q.min)filters.push(Prisma.sql`o."estimatedValue">=${q.min}::numeric`);

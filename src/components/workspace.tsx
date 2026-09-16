@@ -28,6 +28,21 @@ function OpportunityCard({o,reload}:{o:Row;reload:()=>void}){
  return <article className="opportunity-card"><div className="card-top"><span className="badge">{o.modalityName}</span>{match&&<span className={match.score>=70?"score":"badge"}>{match.score} · Compatibilidade calculada</span>}</div><Link href={"/oportunidades/"+encodeURIComponent(o.id)} className="opportunity-title">{excerpt(o.object)}</Link>{o.description&&<p className="opportunity-description">{excerpt(o.description,280)}</p>}<p className="muted agency">{o.agency?.name}</p><div className="opportunity-meta"><span>{o.city} / {o.state}</span><span>{o.officialStatus}</span>{o.tracking?.[0]&&<span className="badge">Interno: {o.tracking[0].status}</span>}</div><div className="card-bottom"><div><small>VALOR ESTIMADO OFICIAL</small><strong>{money(o.estimatedValue)}</strong></div><div><small>ENCERRAMENTO INFORMADO</small><span>{date(o.closesAt)}</span></div><Action className={favorite?"favorite selected":"favorite"} onClick={async()=>{await api("opportunities/"+encodeURIComponent(o.id)+"/favorite",favorite?"DELETE":"POST",{});reload();}}><Star size={18} fill={favorite?"currentColor":"none"}/><span>{favorite?"Salva":"Salvar"}</span></Action><Link className="details-link" href={"/oportunidades/"+encodeURIComponent(o.id)}>Detalhes <ArrowUpRight size={17}/></Link></div></article>;
 }
 const states="AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(" ");
+function LocationFilters({initialState,initialCity}:{initialState:string;initialCity:string}){
+ const [state,setState]=useState(initialState),[city,setCity]=useState(initialCity);
+ const cities=useData("opportunity-cities?state="+encodeURIComponent(state));
+ const ready=cities.data?.state===state&&!cities.loading&&!cities.error;
+ const names:string[]=ready?cities.data.cities:[];
+ return <>
+ <label>UF<select name="state" aria-label="UF" value={state} onChange={e=>{setState(e.target.value);setCity("");}}><option value="">Todas as UFs</option>{states.map(uf=><option key={uf}>{uf}</option>)}</select></label>
+ <label>Município<select aria-label="Município" value={city} onChange={e=>setCity(e.target.value)} disabled={!state||!ready} aria-describedby="municipality-help">
+ <option value="">{!state?"Selecione uma UF primeiro":cities.error?"Falha ao carregar":!ready?"Carregando municípios…":names.length?"Todos os municípios":"Nenhum município na base"}</option>
+ {city&&!names.includes(city)&&<option value={city}>{city}</option>}
+ {names.map(name=><option key={name} value={name}>{name}</option>)}
+ </select><input type="hidden" name="city" value={city}/><small id="municipality-help">Municípios com licitações na base, conforme a UF.</small>
+ {state&&cities.error&&<span role="alert">Não foi possível carregar os municípios. <button type="button" onClick={cities.reload}>Tentar novamente</button></span>}
+ </label></>;
+}
 const filterLabels:Record<string,string>={q:"Busca",state:"UF",city:"Município",agency:"Órgão",modality:"Modalidade",status:"Prazo",min:"Valor mínimo",max:"Valor máximo",from:"Publicação desde",to:"Publicação até",deadline:"Encerramento até",minScore:"Compatibilidade mínima",recommended:"Recomendadas",favorite:"Favoritas"};
 function Opportunities({favorite=false}:{favorite?:boolean}){
  const router=useRouter(),params=useSearchParams(),query=new URLSearchParams(params.toString());
@@ -37,14 +52,13 @@ function Opportunities({favorite=false}:{favorite?:boolean}){
  const active=Array.from(query.entries()).filter(([k,v])=>filterLabels[k]&&v&&!(favorite&&k==="favorite"));
  function navigate(values:URLSearchParams){if(favorite)values.set("favorite","1");router.replace((favorite?"/favoritos":"/oportunidades")+(values.size?"?"+values.toString():""),{scroll:false});}
  function search(e:FormEvent<HTMLFormElement>){e.preventDefault();const values=new URLSearchParams();new FormData(e.currentTarget).forEach((v,k)=>{if(v)values.set(k,String(v).trim());});navigate(values);}
- function remove(key:string){const values=new URLSearchParams(query);values.delete(key);values.delete("page");navigate(values);}
+ function remove(key:string){const values=new URLSearchParams(query);values.delete(key);if(key==="state")values.delete("city");values.delete("page");navigate(values);}
  const field=(name:string)=>query.get(name)??"";
  return <><Heading title={favorite?"Favoritos":"Oportunidades"} description="Combine palavras-chave, localização, modalidade, valores e prazos."/>
  <form key={query.toString()} onSubmit={search} className="search-panel">
  <div className="search-line"><label className="search-input"><Search size={20}/><input name="q" defaultValue={field("q")} aria-label="Buscar oportunidades" placeholder="Objeto, órgão, número ou identificador PNCP"/></label><button type="button" onClick={()=>setFilters(!filters)} aria-expanded={filters} aria-controls="opportunity-filters"><SlidersHorizontal size={17}/>Filtros{active.length?` (${active.length})`:""}</button><button className="primary">Pesquisar</button></div>
  <div id="opportunity-filters" className={filters?"filter-grid":"filter-grid collapsed"}>
- <label>UF<select name="state" aria-label="UF" defaultValue={field("state")}><option value="">Todas as UFs</option>{states.map(uf=><option key={uf}>{uf}</option>)}</select></label>
- <label>Município<input name="city" defaultValue={field("city")} placeholder="Ex.: Recife" maxLength={100}/></label>
+ <LocationFilters initialState={field("state")} initialCity={field("city")}/>
  <label>Órgão<input name="agency" defaultValue={field("agency")} placeholder="Nome ou parte do nome" maxLength={100}/></label>
  <label>Modalidade<select name="modality" aria-label="Modalidade" defaultValue={field("modality")}><option value="">Todas as modalidades</option>{options.data?.modalities.map((m:Row)=><option key={m.modality} value={m.modality}>{m.modalityName}</option>)}{field("modality")&&!options.data?.modalities.some((m:Row)=>String(m.modality)===field("modality"))&&<option value={field("modality")}>Modalidade {field("modality")}</option>}</select></label>
  <label>Prazo informado<select name="status" defaultValue={field("status")}><option value="">Todos</option><option value="open">Ainda não encerrado</option><option value="closed">Encerrado</option><option value="unknown">Sem prazo informado</option></select></label>

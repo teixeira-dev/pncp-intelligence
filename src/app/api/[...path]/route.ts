@@ -100,6 +100,12 @@ async function handler(req:Request,context:{params:Promise<{path:string[]}>}){
  }
  if(method==="DELETE"&&id){await db.company.delete({where:{id}});await audit(userId,"COMPANY_DELETED",id);return reply({ok:true});}
  }
+ if(resource==="opportunity-cities"&&method==="GET"){
+ const state=z.enum(["","AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"]).parse((new URL(req.url).searchParams.get("state")??"").toUpperCase());
+ if(!state)return reply({state,cities:[]});
+ const rows=await db.opportunity.groupBy({by:["city"],where:{state,city:{not:""}},orderBy:{city:"asc"}});
+ return reply({state,cities:rows.map(r=>r.city)});
+ }
  if(resource==="opportunity-filters"&&method==="GET"){
  const modalities=await db.opportunity.findMany({distinct:["modality"],select:{modality:true,modalityName:true},orderBy:{modality:"asc"}});
  return reply({modalities});

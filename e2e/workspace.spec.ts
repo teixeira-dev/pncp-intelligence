@@ -23,12 +23,20 @@ test("login, company, filters, alert, responsive dashboard and logout",async({pa
  await page.getByLabel("Razão social",{exact:true}).fill("Empresa de materiais hospitalares");await page.getByLabel("CNPJ",{exact:true}).fill("11222333000181");
  await page.getByLabel("Palavras-chave, separadas por vírgula",{exact:true}).fill("hospitalar, equipamento");await page.getByLabel("UFs atendidas, separadas por vírgula",{exact:true}).fill("PE");
  await page.getByRole("button",{name:"Salvar perfil",exact:true}).click();await expect(page.getByRole("heading",{name:"Empresa de materiais hospitalares"})).toBeVisible();
- await page.getByRole("link",{name:"Oportunidades",exact:true}).click();await page.getByRole("button",{name:"Filtros",exact:true}).click();await page.getByLabel("UF",{exact:true}).selectOption("PE");await page.getByRole("button",{name:"Pesquisar",exact:true}).click();await expect(page.getByText(/oportunidades encontradas/)).toBeVisible();
- await expect(page).toHaveURL(/state=PE/);
+ await page.getByRole("link",{name:"Oportunidades",exact:true}).click();await page.getByRole("button",{name:"Filtros",exact:true}).click();await expect(page.getByLabel("Município",{exact:true})).toBeDisabled();
+ await page.getByLabel("UF",{exact:true}).selectOption("PE");
+ await page.getByLabel("Município",{exact:true}).selectOption("Recife");
+ await page.getByLabel("UF",{exact:true}).selectOption("SP");
+ await expect(page.getByLabel("Município",{exact:true})).toHaveValue("");
+ await expect(page.getByLabel("Município",{exact:true}).locator('option[value="Recife"]')).toHaveCount(0);
+ await page.getByLabel("UF",{exact:true}).selectOption("PE");await page.getByLabel("Município",{exact:true}).selectOption("Recife");
+ await page.getByRole("button",{name:"Pesquisar",exact:true}).click();await expect(page.getByText(/oportunidades encontradas/)).toBeVisible();
+ await expect(page).toHaveURL(/state=PE/);await expect(page).toHaveURL(/city=Recife/);
  await page.getByRole("link",{name:"Material hospitalar "+suffix,exact:true}).click();
  await expect(page.getByRole("heading",{name:"Detalhes da oportunidade",exact:true})).toBeVisible();
  await expect(page.getByText(opportunityId,{exact:true})).toBeVisible();
  await page.goBack();await expect(page).toHaveURL(/state=PE/);
+ await page.getByRole("button",{name:"Remover filtro UF",exact:true}).click();await expect(page).not.toHaveURL(/city=Recife/);
  await page.getByRole("button",{name:"Limpar filtros",exact:true}).click();await expect(page).not.toHaveURL(/state=PE/);
 
  await page.getByRole("link",{name:"Alertas",exact:true}).click();await page.getByRole("button",{name:"Criar alerta",exact:true}).click();await page.getByLabel("Nome",{exact:true}).fill("Material hospitalar em Pernambuco");await page.getByLabel("Palavras-chave (vírgulas)",{exact:true}).fill("hospitalar");await page.getByLabel("UF",{exact:true}).fill("PE");await page.getByRole("button",{name:"Salvar alerta",exact:true}).click();await expect(page.getByRole("heading",{name:"Material hospitalar em Pernambuco"})).toBeVisible();

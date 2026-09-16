@@ -26,6 +26,7 @@ describe.skipIf(process.env.RUN_INTEGRATION!=="1")("durable PNCP page checkpoint
  });
  it("skips fresh completed modalities without external calls",async()=>{
  const now=new Date("2026-09-15T14:15:00Z");
+ await db.syncPartition.updateMany({data:{through:new Date(now.getTime()-10*60000),windowStart:null,windowEnd:null,nextPage:1,retryAt:null}});
  const fetcher=vi.fn(async()=>{throw new Error("should not fetch");});
  expect((await collectPartitions(await job(),counters(),{fetcher,sleep:async()=>{},now,minRefreshMs:3*3600000})).complete).toBe(true);
  expect(fetcher).not.toHaveBeenCalled();

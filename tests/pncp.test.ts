@@ -21,3 +21,10 @@ it("honors Retry-After and never retries early for long cooldowns",async()=>{
  await expect(fetchJson(new URL("https://pncp.gov.br"),blocked,sleep)).rejects.toBeInstanceOf(PNCPError);expect(blocked).toHaveBeenCalledTimes(1);
  expect(retryAfter("invalid")).toBeNull();expect(retryAfter("Wed, 01 Jan 2031 00:00:00 GMT",0)?.getUTCFullYear()).toBe(2031);
 });
+
+it("lets background workers defer failures after one attempt",async()=>{
+ const fetcher=vi.fn().mockResolvedValue(new Response(null,{status:503}));
+ const sleep=vi.fn(async()=>{});
+ await expect(fetchJson(new URL("https://pncp.gov.br"),fetcher,sleep,1)).rejects.toThrow("503");
+ expect(fetcher).toHaveBeenCalledTimes(1);expect(sleep).not.toHaveBeenCalled();
+});

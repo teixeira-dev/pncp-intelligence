@@ -19,9 +19,9 @@ export function retryAfter(value:string|null,now=Date.now()){
  const milliseconds=/^\d+$/.test(value.trim())?Number(value)*1000:Date.parse(value)-now;
  return Number.isFinite(milliseconds)&&milliseconds>=0?new Date(now+milliseconds):null;
 }
-export async function fetchJson(url:URL,fetcher:typeof fetch=fetch,sleep=wait){
+export async function fetchJson(url:URL,fetcher:typeof fetch=fetch,sleep=wait,attempts=3){
  let last:unknown;
- for(let attempt=0;attempt<3;attempt++){
+ for(let attempt=0;attempt<attempts;attempt++){
  try{
  const r=await fetcher(url,{signal:AbortSignal.timeout(45000),headers:{accept:"application/json"}});
  if(r.status===204)return {data:[],totalPaginas:0};
@@ -34,7 +34,7 @@ export async function fetchJson(url:URL,fetcher:typeof fetch=fetch,sleep=wait){
  }catch(e){
  if(e instanceof PNCPError&&e.status!==429&&e.status<500)throw e;
  last=e;
- if(attempt<2){
+ if(attempt<attempts-1){
  const delay=e instanceof PNCPError&&e.retryAt?Math.max(0,e.retryAt.getTime()-Date.now()):e instanceof PNCPError&&e.status===429?30000*2**attempt:5000*2**attempt;
  // A long server cooldown belongs to a later scheduled run; never retry early.
  if(delay>60000)throw e;

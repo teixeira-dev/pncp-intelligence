@@ -241,6 +241,11 @@ model SyncJob {
  created Int @default(0)
  updated Int @default(0)
  unchanged Int @default(0)
+ detailsCompleted Int?
+ itemsImported Int?
+ documentsImported Int?
+ detailsFailed Int?
+ pendingDetails Int?
  error String?
  logs SyncLog[]
 }

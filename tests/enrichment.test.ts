@@ -19,7 +19,10 @@ describe.skipIf(process.env.RUN_INTEGRATION!=="1")("automatic official details",
  await db.opportunity.create({data:{...original,raw:JSON.parse(JSON.stringify(original.raw)),id:id+"-NEW",detailsHash:null,discoveredAt:new Date(Date.now()+60000)}});
  await db.opportunity.update({where:{id},data:{detailsHash:null}});
  await db.jobRequest.create({data:{type:"ENRICH:"+id}});
- expect((await importPendingDetails({limit:1,newest:true,fetcher,sleep:async()=>{}})).imported).toBe(1);
+ const onProgress=vi.fn(async()=>{});
+ const result=await importPendingDetails({limit:1,newest:true,fetcher,sleep:async()=>{},onProgress});
+ expect(result).toMatchObject({imported:1,items:1,documents:1,failed:0,pending:true});expect(result.pendingCount).toBeGreaterThan(0);
+ expect(onProgress).toHaveBeenLastCalledWith({imported:1,items:1,documents:1,failed:0});
  expect((await db.opportunity.findUniqueOrThrow({where:{id}})).detailsHash).toBe(original.contentHash);
  expect((await db.opportunity.findUniqueOrThrow({where:{id:id+"-NEW"}})).detailsHash).toBeNull();
  expect((await db.jobRequest.findFirstOrThrow({where:{type:"ENRICH:"+id}})).status).toBe("DONE");

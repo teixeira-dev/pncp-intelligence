@@ -1,0 +1,1 @@
+ALTER TABLE "SyncJob" ADD COLUMN "detailsCompleted" INTEGER, ADD COLUMN "itemsImported" INTEGER, ADD COLUMN "documentsImported" INTEGER, ADD COLUMN "detailsFailed" INTEGER, ADD COLUMN "pendingDetails" INTEGER;

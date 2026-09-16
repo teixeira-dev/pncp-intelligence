@@ -3,7 +3,7 @@ import {fetchJson,normalizeOpportunity,officialModalities,pageSchema,PNCPError,p
 import {syncError} from "./sync-error";
 type Counters={received:number;created:number;updated:number;unchanged:number};
 const day=86400000;
-export async function collectPartitions(jobId:string,counters:Counters,options:{fetcher?:typeof fetch;sleep?:typeof wait;now?:Date;pageBudget?:number;perModality?:number;budgetMs?:number}={}){
+export async function collectPartitions(jobId:string,counters:Counters,options:{fetcher?:typeof fetch;sleep?:typeof wait;now?:Date;pageBudget?:number;perModality?:number;budgetMs?:number;attempts?:number;minRefreshMs?:number}={}){
  const sleep=options.sleep??wait,now=options.now??new Date(),deadline=Date.now()+(options.budgetMs??20*60000);
  const cooldown=await db.syncCursor.findUnique({where:{id:"PNCP_COOLDOWN"}});
  if(cooldown&&cooldown.through>now)return {complete:false};
@@ -32,6 +32,7 @@ export async function collectPartitions(jobId:string,counters:Counters,options:{
  const days=Math.max(1,Math.min(30,Number(process.env.PNCP_INITIAL_DAYS)||7));
  for(let partition of partitions){
  if(pages>=(options.pageBudget??100)||Date.now()>=deadline){complete=false;break;}
+ if(!partition.windowStart&&partition.through&&now.getTime()-partition.through.getTime()<(options.minRefreshMs??0))continue;
  if(partition.retryAt&&partition.retryAt>now){complete=false;continue;}
  if(!partition.windowStart||!partition.windowEnd){
  const start=partition.through?new Date(partition.through.getTime()-2*day):new Date(now.getTime()-days*day);
@@ -45,7 +46,7 @@ export async function collectPartitions(jobId:string,counters:Counters,options:{
  const page=partition.nextPage,modality=partition.modality;
  try{
  await sleep(2000);
- const parsed=pageSchema.parse(await fetchJson(publicationUrl(start,end,modality,page,"atualizacao"),options.fetcher,sleep));
+ const parsed=pageSchema.parse(await fetchJson(publicationUrl(start,end,modality,page,"atualizacao"),options.fetcher,sleep,options.attempts??3));
  done=page>=parsed.totalPaginas||parsed.data.length===0;
  const delta: Counters={received:0,created:0,updated:0,unchanged:0};
  // Page records and its checkpoint commit together. A rollback never skips records.

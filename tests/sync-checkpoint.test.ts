@@ -24,6 +24,12 @@ describe.skipIf(process.env.RUN_INTEGRATION!=="1")("durable PNCP page checkpoint
  const next=counters();await collectPartitions(await job(),next,{fetcher:second,sleep:async()=>{},now:new Date(time.getTime()+2*3600000)});
  expect(second).toHaveBeenCalledTimes(1);expect(next.created).toBe(1);expect(next.unchanged).toBe(0);expect(await db.opportunity.count({where:{id:{in:ids}}})).toBe(2);
  });
+ it("skips fresh completed modalities without external calls",async()=>{
+ const now=new Date("2026-09-15T14:15:00Z");
+ const fetcher=vi.fn(async()=>{throw new Error("should not fetch");});
+ expect((await collectPartitions(await job(),counters(),{fetcher,sleep:async()=>{},now,minRefreshMs:3*3600000})).complete).toBe(true);
+ expect(fetcher).not.toHaveBeenCalled();
+ });
  it("does not advance a checkpoint on validation failure",async()=>{
  const fetcher=vi.fn(async()=>Response.json({data:[{bad:true}],totalPaginas:1}));
  await collectPartitions(await job(),counters(),{fetcher,sleep:async()=>{},now:new Date("2026-09-16T12:00:00Z")});

@@ -1,5 +1,6 @@
+import {writeOpportunity} from "./opportunity-write";
 import {db} from "./db";
-import {fetchJson,normalizeOpportunity,officialModalities,pageSchema,PNCPError,publicationUrl,wait} from "./pncp";
+import {fetchJson,officialModalities,pageSchema,PNCPError,publicationUrl,wait} from "./pncp";
 import {syncError} from "./sync-error";
 type Counters={received:number;created:number;updated:number;unchanged:number};
 const day=86400000;
@@ -52,13 +53,9 @@ export async function collectPartitions(jobId:string,counters:Counters,options:{
  // Page records and its checkpoint commit together. A rollback never skips records.
  await db.$transaction(async tx=>{
  for(const raw of parsed.data){
- const n=normalizeOpportunity(raw);
- await tx.contractingAgency.upsert({where:{id:n.agency.id},create:n.agency,update:n.agency});
- const existing=await tx.opportunity.findUnique({where:{id:n.opportunity.id},select:{contentHash:true}});
- delta.received++;
- if(existing?.contentHash===n.opportunity.contentHash){delta.unchanged++;continue;}
- await tx.opportunity.upsert({where:{id:n.opportunity.id},create:n.opportunity,update:n.opportunity});
- if(existing)delta.updated++;else delta.created++;
+ const result=await writeOpportunity(tx,raw);
+ delta.received++;delta[result]++;
+
  }
  await tx.syncPartition.update({where:{modality},data:done?{through:end,windowStart:null,windowEnd:null,nextPage:1,retryAt:null}:{nextPage:page+1,retryAt:null}});
  await tx.syncJob.update({where:{id:jobId},data:{received:{increment:delta.received},created:{increment:delta.created},updated:{increment:delta.updated},unchanged:{increment:delta.unchanged}}});

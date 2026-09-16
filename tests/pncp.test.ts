@@ -1,5 +1,5 @@
 import {describe,it,expect,vi,afterEach} from "vitest";
-import {fetchJson,normalizeOpportunity,pageSchema,PNCPError,retryAfter} from "../src/lib/pncp";
+import {canonicalHash,fetchJson,normalizeOpportunity,pageSchema,PNCPError,retryAfter} from "../src/lib/pncp";
 export const fixture={numeroControlePNCP:"11222333000181-1-000001/2026",anoCompra:2026,sequencialCompra:1,numeroCompra:"1/2026",objetoCompra:"Material hospitalar",valorTotalEstimado:1000.50,modalidadeId:6,modalidadeNome:"Pregão eletrônico",situacaoCompraNome:"Divulgada no PNCP",dataPublicacaoPncp:"2026-09-14T10:00:00",orgaoEntidade:{cnpj:"11222333000181",razaoSocial:"Órgão de teste"},unidadeOrgao:{municipioNome:"Recife",ufSigla:"PE"}};
 afterEach(()=>vi.useRealTimers());
 describe("PNCP client",()=>{
@@ -27,4 +27,12 @@ it("lets background workers defer failures after one attempt",async()=>{
  const sleep=vi.fn(async()=>{});
  await expect(fetchJson(new URL("https://pncp.gov.br"),fetcher,sleep,1)).rejects.toThrow("503");
  expect(fetcher).toHaveBeenCalledTimes(1);expect(sleep).not.toHaveBeenCalled();
+});
+
+it("ignores JSON key ordering but detects real official changes",()=>{
+ const a={id:1,nested:{city:"Recife",state:"PE"},items:[1,2]};
+ const b={items:[1,2],nested:{state:"PE",city:"Recife"},id:1};
+ expect(canonicalHash(a)).toBe(canonicalHash(b));
+ expect(canonicalHash(a)).not.toBe(canonicalHash({...b,items:[2,1]}));
+ expect(canonicalHash(a)).not.toBe(canonicalHash({...b,nested:{city:"Olinda",state:"PE"}}));
 });

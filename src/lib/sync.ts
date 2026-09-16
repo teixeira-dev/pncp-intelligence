@@ -2,21 +2,15 @@ import {collectPartitions} from "./sync-collector";
 import {syncError} from "./sync-error";
 import {Prisma} from "@prisma/client";
 import {db} from "./db";
-import {normalizeOpportunity} from "./pncp";
+import {writeOpportunity} from "./opportunity-write";
 import {matchOpportunity,normalize} from "./matching";
 import {analyzeDocument} from "./documents";
 import {importPendingDetails} from "./enrichment";
 import {sendMail} from "./mail";
 export async function upsertOpportunity(raw:unknown){
- const n=normalizeOpportunity(raw);
- return db.$transaction(async tx=>{
- await tx.contractingAgency.upsert({where:{id:n.agency.id},create:n.agency,update:n.agency});
- const old=await tx.opportunity.findUnique({where:{id:n.opportunity.id},select:{contentHash:true}});
- if(old?.contentHash===n.opportunity.contentHash)return "unchanged" as const;
- await tx.opportunity.upsert({where:{id:n.opportunity.id},create:n.opportunity,update:n.opportunity});
- return old?"updated" as const:"created" as const;
- });
+ return db.$transaction(tx=>writeOpportunity(tx,raw));
 }
+
 export async function refreshCompany(companyId:string,since?:Date){
  const company=await db.company.findUniqueOrThrow({where:{id:companyId}});
  let cursor:string|undefined;
@@ -69,14 +63,14 @@ export async function runSync(){
  for(const c of await db.company.findMany({select:{id:true}}))await refreshCompany(c.id);
  await db.jobRequest.updateMany({where:{id:{in:pending.filter(r=>r.type==="MATCH").map(r=>r.id)}},data:{status:"DONE"}});
  }
- const job=await db.syncJob.create({data:{detailsCompleted:0,itemsImported:0,documentsImported:0,detailsFailed:0}});console.info(JSON.stringify({event:"PNCP_SYNC_STARTED",jobId:job.id}));const counters={received:0,created:0,updated:0,unchanged:0};
+ const job=await db.syncJob.create({data:{detailsCompleted:0,itemsImported:0,documentsImported:0,detailsFailed:0,detailsDeferred:0,detailPages:0}});console.info(JSON.stringify({event:"PNCP_SYNC_STARTED",jobId:job.id}));const counters={received:0,created:0,updated:0,unchanged:0};
  try{
  let outcome={complete:false};
  try{outcome=await collectPartitions(job.id,counters,{pageBudget:25,perModality:3,budgetMs:2*60000,attempts:1,minRefreshMs:3600000});}
  catch(error){console.error(JSON.stringify({event:"PNCP_DISCOVERY_DEFERRED",jobId:job.id,error:syncError(error)}));await db.syncLog.create({data:{jobId:job.id,event:"PNCP_DISCOVERY_DEFERRED",detail:error instanceof Error?error.message.slice(0,400):"Discovery failed"}});}
  // Every fourth quarter-hour gives older records a turn to prevent starvation.
  const prioritize=Math.floor(Date.now()/900000)%4!==0;
- const details=await importPendingDetails({limit:150,newest:prioritize,budgetMs:8*60000,attempts:1,onProgress:async p=>{await db.syncJob.update({where:{id:job.id},data:{detailsCompleted:p.imported,itemsImported:p.items,documentsImported:p.documents,detailsFailed:p.failed}});}});
+ const details=await importPendingDetails({limit:150,newest:prioritize,budgetMs:8*60000,attempts:1,onProgress:async p=>{await db.syncJob.update({where:{id:job.id},data:{detailsCompleted:p.imported,itemsImported:p.items,documentsImported:p.documents,detailsFailed:p.failed,detailsDeferred:p.deferred,detailPages:p.pages}});}});
  console.info(JSON.stringify({event:"PNCP_DETAILS_BATCH",...details,prioritized:prioritize}));
  outcome.complete=outcome.complete&&!details.pending;
  if(counters.created||counters.updated||details.imported){

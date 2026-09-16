@@ -88,6 +88,7 @@ model ContractingAgency {
  opportunities Opportunity[]
 }
 model Opportunity {
+ detailImport DetailImport?
  detailsHash String?
  detailsSyncedAt DateTime?
  detailsRetryAt DateTime?
@@ -241,6 +242,8 @@ model SyncJob {
  created Int @default(0)
  updated Int @default(0)
  unchanged Int @default(0)
+ detailsDeferred Int?
+ detailPages Int?
  detailsCompleted Int?
  itemsImported Int?
  documentsImported Int?
@@ -285,4 +288,23 @@ model SyncPartition {
  nextPage Int @default(1)
  retryAt DateTime?
  updatedAt DateTime @updatedAt
+}
+
+model DetailImport {
+ opportunityId String @id
+ contentHash String
+ kind String @default("itens")
+ nextPage Int @default(1)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ opportunity Opportunity @relation(fields:[opportunityId],references:[id],onDelete:Cascade)
+ pages DetailPage[]
+}
+model DetailPage {
+ opportunityId String
+ kind String
+ page Int
+ payload Json
+ batch DetailImport @relation(fields:[opportunityId],references:[opportunityId],onDelete:Cascade)
+ @@id([opportunityId,kind,page])
 }

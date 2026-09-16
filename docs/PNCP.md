@@ -59,3 +59,10 @@ No cron, cada requisição tem uma tentativa por rodada: falhas são adiadas no 
 Os contadores de licitações com detalhes, itens, documentos e falhas são persistidos após cada oportunidade. Pendências são contadas no fim. Métricas antigas aparecem como não registradas, não como zero. Erros de consultas são separados do status parcial normal. Após adquirir o lock exclusivo, execuções RUNNING anteriores são marcadas como interrompidas. Matching periódico reavalia apenas oportunidades alteradas na rodada; alteração de perfil continua solicitando recálculo integral.
 
 Migration aditiva: `202609160001_collection_metrics`. Aplicar com `npm run db:migrate` antes de iniciar a nova versão.
+
+## Retomada de detalhes e comparação estável (16/09/2026)
+Hashes agora ordenam recursivamente chaves de objetos JSON. Nenhum campo oficial é ignorado; a ordem de arrays continua significativa. Hashes antigos são migrados ao reencontrar o registro, comparando o JSON original, sem invalidar detalhes já completos se os dados forem idênticos.
+
+`DetailImport` e `DetailPage` guardam páginas validadas e a próxima página em uma transação. O cron dedica até seis páginas e 60 segundos para iniciar chamadas por oportunidade, respeitando o orçamento global; uma chamada em andamento pode ultrapassar esse tempo. O próximo job continua do checkpoint, inclusive após falha no endpoint de documentos. Não se publicam conjuntos incompletos: a substituição final e a remoção do checkpoint são atômicas. Mudança no hash oficial ou snapshot com mais de sete dias reinicia a coleta para evitar combinar versões indefinidamente. O PNCP não oferece isolamento transacional entre páginas; confirme a fonte oficial antes de decidir participar.
+
+O painel distingue licitações completas de oportunidades em continuação e páginas processadas. Migration aditiva `202609160002_detail_checkpoints`; nenhum dado oficial existente é apagado por ela. A taxa de chamadas e o cooldown permanecem preservados.

@@ -43,10 +43,15 @@ export async function fetchJson(url:URL,fetcher:typeof fetch=fetch,sleep=wait,at
  }
  }throw last;
 }
+// Object key order is not a data change. Array order and every official field remain significant.
+export function canonicalHash(value:unknown):string{
+ const canonical=(v:unknown):unknown=>Array.isArray(v)?v.map(canonical):v!==null&&typeof v==="object"?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([k,x])=>[k,canonical(x)])):v;
+ return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+}
 export function normalizeOpportunity(input:unknown){
  const r=official.parse(input);
  const date=(v:string|null|undefined)=>{if(!v)return null;const d=new Date(/Z$|[+-]\d{2}:\d{2}$/.test(v)?v:v+"-03:00");if(!Number.isFinite(d.getTime()))throw new Error("PNCP_INVALID_DATE");return d;};
- const contentHash=createHash("sha256").update(JSON.stringify(r)).digest("hex");
+ const contentHash=canonicalHash(r);
  return {agency:{id:r.orgaoEntidade.cnpj,name:r.orgaoEntidade.razaoSocial,sphere:r.orgaoEntidade.esferaId,power:r.orgaoEntidade.poderId},
  opportunity:{id:r.numeroControlePNCP,agencyId:r.orgaoEntidade.cnpj,year:r.anoCompra,sequence:r.sequencialCompra,number:r.numeroCompra,object:r.objetoCompra,description:r.informacaoComplementar??"",estimatedValue:r.valorTotalEstimado?.toFixed(2)??null,city:r.unidadeOrgao.municipioNome,state:r.unidadeOrgao.ufSigla,modality:r.modalidadeId,modalityName:r.modalidadeNome,disputeMode:r.modoDisputaNome,officialStatus:r.situacaoCompraNome,publishedAt:date(r.dataPublicacaoPncp)!,opensAt:date(r.dataAberturaProposta),closesAt:date(r.dataEncerramentoProposta),officialUrl:"https://pncp.gov.br/app/editais/"+r.orgaoEntidade.cnpj+"/"+r.anoCompra+"/"+r.sequencialCompra,contentHash,raw:JSON.parse(JSON.stringify(r))}};
 }

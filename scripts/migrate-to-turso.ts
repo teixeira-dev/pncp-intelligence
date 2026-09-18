@@ -30,6 +30,7 @@ async function main(){
  const url=process.env.TURSO_DATABASE_URL,authToken=process.env.TURSO_AUTH_TOKEN;
  if(!url||!authToken)throw new Error("TURSO_DATABASE_URL/TURSO_AUTH_TOKEN não configurados.");
  const target=createClient({url,authToken});
+ await target.execute("PRAGMA foreign_keys=OFF");
  const ddl=(await import("node:fs/promises")).readFile(new URL("./turso-schema.sql",import.meta.url),"utf8");
  await target.executeMultiple(await ddl);
  const report:Record<string,{source:number,target:number}>={};
@@ -38,13 +39,13 @@ async function main(){
    const source=Number(countRows[0]?.count??0);
    let offset=0;
    while(offset<source){
-     const rows=await db.$queryRawUnsafe<Record<string,unknown>[]>(`SELECT * FROM ${q(table)} ORDER BY 1 LIMIT 100 OFFSET ${offset}`);
+     const rows=await db.$queryRawUnsafe<Record<string,unknown>[]>(`SELECT * FROM ${q(table)} ORDER BY 1 LIMIT 25 OFFSET ${offset}`);
      if(!rows.length)break;
      const statements=rows.map(row=>{
        const keys=Object.keys(row);
        return {sql:`INSERT OR REPLACE INTO ${q(table)} (${keys.map(q).join(",")}) VALUES (${keys.map(()=>"?").join(",")})`,args:keys.map(k=>value(table,k,row[k]))};
      });
-     await target.batch(statements,"write");
+     for(let i=0;i<statements.length;i+=10) await target.batch(statements.slice(i,i+10),"write");
      offset+=rows.length;
      console.info(JSON.stringify({event:"TURSO_COPY_PROGRESS",table,copied:offset,total:source}));
    }
@@ -53,6 +54,7 @@ async function main(){
    report[table]={source,target:targetCount};
    if(source!==targetCount)throw new Error(`Contagem divergente em ${table}: PostgreSQL=${source}, Turso=${targetCount}`);
  }
+ await target.execute("PRAGMA foreign_keys=ON");
  console.info(JSON.stringify({event:"TURSO_MIGRATION_VALIDATED",report}));
  target.close();
 }

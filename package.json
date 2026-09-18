@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:integration": "vitest run tests/integration.test.ts",
     "db:generate": "prisma generate",
-    "db:migrate": "tsx scripts/turso-migrate.ts",
+    "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx scripts/seed.ts",
     "admin:create": "tsx scripts/admin.ts",
     "job:sync": "tsx scripts/sync.ts",
@@ -25,9 +25,7 @@
     "nodemailer": "10.0.10",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "zod": "3.25.76",
-    "@prisma/adapter-libsql": "6.19.3",
-    "@libsql/client": "0.15.15"
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

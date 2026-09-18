@@ -15,7 +15,9 @@
     "db:seed": "tsx scripts/seed.ts",
     "admin:create": "tsx scripts/admin.ts",
     "job:sync": "tsx scripts/sync.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "db:turso:generate": "prisma generate --schema prisma/schema.turso.prisma",
+    "db:turso:migrate-data": "tsx scripts/migrate-to-turso.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
@@ -25,7 +27,8 @@
     "nodemailer": "10.0.10",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "@libsql/client": "0.15.15"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

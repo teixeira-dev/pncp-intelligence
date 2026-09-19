@@ -17,11 +17,11 @@ function value(table:string,key:string,v:unknown):InValue{
 }
 function q(name:string){return '"'+name.replaceAll('"','""')+'"';}
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
-function retryable(e:any){return e?.code==="P1017"||String(e?.message??"").includes("closed the connection");}
+function retryable(e:any){const m=String(e?.message??"");return e?.code==="P1017"||m.includes("closed the connection")||m.includes("not yet accepting connections")||m.includes("Consistent recovery state")||m.includes("starting up");}
 async function pg<T>(fn:(db:PrismaClient)=>Promise<T>):Promise<T>{
- for(let attempt=0;attempt<10;attempt++){
+ for(let attempt=0;attempt<30;attempt++){
   const db=new PrismaClient();
-  try{return await fn(db)}catch(e){if(!retryable(e)||attempt===9)throw e;console.warn(JSON.stringify({event:"POSTGRES_RECONNECT",attempt:attempt+1}));await sleep(Math.min(500*(attempt+1),3000));}
+  try{return await fn(db)}catch(e){if(!retryable(e)||attempt===29)throw e;const waitMs=Math.min(5000*(attempt+1),60000);console.warn(JSON.stringify({event:"POSTGRES_RECOVERY_WAIT",attempt:attempt+1,waitMs}));await sleep(waitMs);}
   finally{await db.$disconnect().catch(()=>{})}
  }
  throw new Error("PostgreSQL retry exhausted");

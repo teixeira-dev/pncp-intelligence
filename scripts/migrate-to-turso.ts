@@ -17,7 +17,7 @@ function value(table:string,key:string,v:unknown):InValue{
 }
 function q(name:string){return '"'+name.replaceAll('"','""')+'"';}
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
-function retryable(e:any){const m=String(e?.message??"");return e?.code==="P1017"||m.includes("closed the connection")||m.includes("not yet accepting connections")||m.includes("Consistent recovery state")||m.includes("starting up");}
+function retryable(e:any){const m=String(e?.message??"");return e?.code==="P1017"||m.includes("closed the connection")||m.includes("not yet accepting connections")||m.includes("Consistent recovery state")||m.includes("starting up")||m.includes("recovery mode");}
 async function pg<T>(fn:(db:PrismaClient)=>Promise<T>):Promise<T>{
  for(let attempt=0;attempt<30;attempt++){
   const db=new PrismaClient();

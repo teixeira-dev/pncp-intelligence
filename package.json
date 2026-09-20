@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:integration": "vitest run tests/integration.test.ts",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy",
+    "db:migrate": "echo 'Turso schema is managed separately; Prisma Migrate is not used for remote libSQL'",
     "db:seed": "tsx scripts/seed.ts",
     "admin:create": "tsx scripts/admin.ts",
     "job:sync": "tsx scripts/sync.ts",
@@ -28,7 +28,8 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "zod": "3.25.76",
-    "@libsql/client": "0.15.15"
+    "@libsql/client": "0.15.15",
+    "@prisma/adapter-libsql": "6.19.3"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

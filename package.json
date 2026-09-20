@@ -29,7 +29,8 @@
     "react-dom": "19.3.0",
     "zod": "3.25.76",
     "@libsql/client": "0.15.15",
-    "@prisma/adapter-libsql": "6.19.3"
+    "@prisma/adapter-libsql": "6.19.3",
+    "pg": "8.16.3"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
@@ -44,7 +45,8 @@
     "tailwindcss": "4.3.3",
     "tsx": "4.23.13",
     "typescript": "5.9.3",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "@types/pg": "8.15.5"
   },
   "overrides": {
     "deepmerge-ts": "8.0.0"

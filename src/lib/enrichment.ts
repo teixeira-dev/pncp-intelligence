@@ -58,7 +58,15 @@ export async function importPendingDetails(options:{limit?:number;newest?:boolea
  const cooldown=await db.syncCursor.findUnique({where:{id:"PNCP_COOLDOWN"}});
  if(cooldown&&cooldown.through>new Date())return {imported:0,items:0,documents:0,failed:0,deferred:0,pages:0,pending:true,pendingCount:null};
  // Existing opportunities are included automatically; no manual click is required.
- const rows=await db.$queryRaw<{id:string}[]>`SELECT id FROM "Opportunity" WHERE ("detailsHash" IS NULL OR "detailsHash" <> "contentHash") AND ("detailsRetryAt" IS NULL OR "detailsRetryAt" <= NOW()) ORDER BY CASE WHEN ${options.newest??false} THEN EXISTS(SELECT 1 FROM "JobRequest" j WHERE j.type='ENRICH:' || "Opportunity".id AND j.status='PENDING') END DESC, CASE WHEN ${options.newest??false} THEN EXISTS(SELECT 1 FROM "Favorite" f WHERE f."opportunityId"="Opportunity".id) END DESC, CASE WHEN ${options.newest??false} THEN "discoveredAt" END DESC, "discoveredAt" ASC, id ASC LIMIT ${options.limit??50}`;
+ const now=new Date(),limit=options.limit??50;
+ const baseWhere={AND:[{OR:[{detailsHash:null},{NOT:{detailsHash:{equals:db.opportunity.fields.contentHash}}}]},{OR:[{detailsRetryAt:null},{detailsRetryAt:{lte:now}}]}]} as any;
+ let rows=await db.opportunity.findMany({where:baseWhere,select:{id:true,discoveredAt:true},orderBy:{discoveredAt:"asc"},take:limit});
+ if(options.newest){
+  const requested=await db.jobRequest.findMany({where:{status:"PENDING",type:{startsWith:"ENRICH:"}},select:{type:true}});
+  const requestedIds=new Set(requested.map(r=>r.type.slice(7)));
+  const favoriteIds=new Set((await db.favorite.findMany({select:{opportunityId:true}})).map(f=>f.opportunityId));
+  rows.sort((a,b)=>Number(requestedIds.has(b.id))-Number(requestedIds.has(a.id))||Number(favoriteIds.has(b.id))-Number(favoriteIds.has(a.id))||b.discoveredAt.getTime()-a.discoveredAt.getTime());
+ }
  const until=Date.now()+(options.budgetMs??10*60000);const progress:DetailProgress={imported:0,items:0,documents:0,failed:0,deferred:0,pages:0};
  for(const row of rows){
  if(Date.now()>=until)break;
@@ -74,6 +82,7 @@ export async function importPendingDetails(options:{limit?:number;newest?:boolea
  }
  await options.onProgress?.({...progress});
  }
- const pending=await db.$queryRaw<{count:number}[]>`SELECT COUNT(*)::int AS count FROM "Opportunity" WHERE "detailsHash" IS NULL OR "detailsHash" <> "contentHash"`;
- return {...progress,pending:pending[0].count>0,pendingCount:pending[0].count};
+ const all=await db.opportunity.findMany({select:{detailsHash:true,contentHash:true}});
+ const pendingCount=all.reduce((n,o)=>n+(o.detailsHash===null||o.detailsHash!==o.contentHash?1:0),0);
+ return {...progress,pending:pendingCount>0,pendingCount};
 }

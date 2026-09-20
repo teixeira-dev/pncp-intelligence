@@ -75,10 +75,15 @@ export async function importPendingDetails(options:{limit?:number;newest?:boolea
  progress.imported++;progress.items+=result.items;progress.documents+=result.documents;await db.jobRequest.updateMany({where:{type:"ENRICH:"+row.id,status:"PENDING"},data:{status:"DONE"}});console.info(JSON.stringify({event:"PNCP_DETAILS_IMPORTED",opportunityId:row.id,...result}));}
  catch(error){
  progress.failed++;
- const retryAt=error instanceof PNCPError&&error.retryAt?error.retryAt:new Date(Date.now()+30*60000);
+ const transient=error instanceof PNCPError&&[429,502,503,504].includes(error.status??0);
+ const retryAt=error instanceof PNCPError&&error.retryAt?error.retryAt:new Date(Date.now()+(transient?15:30)*60000);
  await db.opportunity.update({where:{id:row.id},data:{detailsRetryAt:retryAt,detailsError:syncError(error).kind}});
  console.error(JSON.stringify({event:"PNCP_DETAILS_FAILED",opportunityId:row.id,error:syncError(error)}));
- if(error instanceof PNCPError&&(error.status===429||error.retryAt)){await db.syncCursor.upsert({where:{id:"PNCP_COOLDOWN"},create:{id:"PNCP_COOLDOWN",through:retryAt},update:{through:retryAt}});await options.onProgress?.({...progress});break;}
+ if(transient||error instanceof PNCPError&&error.retryAt){
+  await db.syncCursor.upsert({where:{id:"PNCP_COOLDOWN"},create:{id:"PNCP_COOLDOWN",through:retryAt},update:{through:retryAt}});
+  console.warn(JSON.stringify({event:"PNCP_DETAILS_COOLDOWN",status:error instanceof PNCPError?error.status:null,retryAt:retryAt.toISOString()}));
+  await options.onProgress?.({...progress});break;
+ }
  }
  await options.onProgress?.({...progress});
  }

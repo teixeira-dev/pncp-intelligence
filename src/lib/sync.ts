@@ -1,6 +1,7 @@
 import {collectPartitions} from "./sync-collector";
 import {syncError} from "./sync-error";
 import {Prisma} from "@prisma/client";
+const stringArray=(v:Prisma.JsonValue|null):string[]=>Array.isArray(v)?v.filter((x):x is string=>typeof x==="string"):[];
 import {db} from "./db";
 import {writeOpportunity} from "./opportunity-write";
 import {matchOpportunity,normalize} from "./matching";
@@ -17,7 +18,7 @@ export async function refreshCompany(companyId:string,since?:Date){
  do{
  const rows=await db.opportunity.findMany({where:since?{updatedAt:{gte:since}}:{},take:100,orderBy:{id:"asc"},...(cursor?{cursor:{id:cursor},skip:1}:{}),include:{items:{select:{description:true}}}});
  if(!rows.length)break;
- for(const o of rows){const result=matchOpportunity(company,o);await db.opportunityMatch.upsert({where:{companyId_opportunityId:{companyId,opportunityId:o.id}},create:{companyId,opportunityId:o.id,...result},update:result});}
+ for(const o of rows){const result=matchOpportunity({...company,keywords:stringArray(company.keywords),excludedTerms:stringArray(company.excludedTerms),regions:stringArray(company.regions),modalities:Array.isArray(company.modalities)?company.modalities.filter((x):x is number=>typeof x==="number"):[]},o);await db.opportunityMatch.upsert({where:{companyId_opportunityId:{companyId,opportunityId:o.id}},create:{companyId,opportunityId:o.id,...result},update:result});}
  cursor=rows.at(-1)!.id;
  }while(cursor);
 }
@@ -25,7 +26,7 @@ export async function processAlerts(){
  const alerts=await db.alert.findMany({where:{active:true,user:{active:true}},include:{user:{select:{email:true}}}});
  for(const a of alerts){
  const where:Prisma.OpportunityWhereInput={
- ...(a.state?{state:a.state}:{}),...(a.city?{city:{contains:a.city,mode:"insensitive"}}:{}),...(a.agency?{agency:{name:{contains:a.agency,mode:"insensitive"}}}:{}),
+ ...(a.state?{state:a.state}:{}),...(a.city?{city:{contains:a.city}}:{}),...(a.agency?{agency:{name:{contains:a.agency}}}:{}),
  ...(a.modality?{modality:a.modality}:{}),
  ...(a.minValue!==null||a.maxValue!==null?{estimatedValue:{...(a.minValue!==null?{gte:a.minValue}:{}),...(a.maxValue!==null?{lte:a.maxValue}:{})}}:{}),
  ...(a.companyId?{matches:{some:{companyId:a.companyId,score:{gte:a.minScore}}}}:{}),
@@ -36,7 +37,7 @@ export async function processAlerts(){
  const rows=await db.opportunity.findMany({where,take:100,orderBy:{id:"asc"},...(cursor?{cursor:{id:cursor},skip:1}:{})});
  if(!rows.length)break;
  for(const o of rows){
- if(a.keywords.length&&!a.keywords.some(t=>normalize(o.object+" "+o.description).includes(normalize(t))))continue;
+ const keywords=stringArray(a.keywords); if(keywords.length&&!keywords.some((t:string)=>normalize(o.object+" "+o.description).includes(normalize(t))))continue;
  await db.notification.upsert({where:{alertId_opportunityId:{alertId:a.id,opportunityId:o.id}},create:{userId:a.userId,alertId:a.id,opportunityId:o.id,title:a.name+": "+o.object.slice(0,150)},update:{}});
  }
  cursor=rows.at(-1)!.id;
@@ -86,5 +87,5 @@ export async function runSync(){
  await db.syncLog.create({data:{jobId:job.id,event:"PNCP_SYNC_FAILED",detail:message}});
  console.error(JSON.stringify({event:"PNCP_SYNC_FAILED",jobId:job.id,...counters,error:syncError(e)}));throw e;
  }
- },{timeout:3300000,maxWait:5000});
+ });
 }

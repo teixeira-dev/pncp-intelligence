@@ -40,7 +40,7 @@ export async function searchOpportunities(userId:string,params:URLSearchParams){
  const [rows,count]=await db.$transaction([
  db.$queryRaw<{id:string}[]>(Prisma.sql`SELECT o.id ${source} ORDER BY ${order},o.id ASC LIMIT 20 OFFSET ${(q.page-1)*20}`),
  db.$queryRaw<{total:bigint}[]>(Prisma.sql`SELECT count(*) AS total ${source}`)
- ],{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
+ ]);
  const items=await db.opportunity.findMany({where:{id:{in:rows.map(r=>r.id)}},select:{id:true,object:true,description:true,detailsSyncedAt:true,city:true,state:true,modalityName:true,estimatedValue:true,closesAt:true,officialStatus:true,publishedAt:true,agency:{select:{name:true}},favorites:{where:{userId},select:{id:true}},matches:{where:{company:{organization:{memberships:{some:{userId}}}}},orderBy:{score:"desc"},take:1,select:{score:true,reasons:true}},tracking:{where:{userId},select:{status:true}}}});
  items.sort((a,b)=>rows.findIndex(r=>r.id===a.id)-rows.findIndex(r=>r.id===b.id));
  const total=Number(count[0].total);return {items,total,page:q.page,pages:Math.ceil(total/20)};

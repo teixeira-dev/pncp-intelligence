@@ -32,9 +32,13 @@ async function main():Promise<void>{
   const countRows: Array<{count:bigint}> = await pg<Array<{count:bigint}>>(async (db:PrismaClient):Promise<Array<{count:bigint}>> => await db.$queryRawUnsafe<{count:bigint}[]>(`SELECT COUNT(*)::bigint AS count FROM ${q(table)}`));const source=Number(countRows[0]?.count??0);
   const keys=await primaryKeyColumns(table);const order=keys.map(q).join(",");let copied=0;let lastKey:unknown[]|null=null;
   while(copied<source){
-   const rows=lastKey===null
-    ? await pg(db=>db.$queryRawUnsafe<Record<string,unknown>[]>(`SELECT * FROM ${q(table)} ORDER BY ${order} LIMIT 25`))
-    : await pg<Array<Record<string,unknown>>>(async (db:PrismaClient):Promise<Array<Record<string,unknown>>> => await db.$queryRawUnsafe<Record<string,unknown>[]>(`SELECT * FROM ${q(table)} WHERE (${order}) > (${keys.map((_,i)=>"$"+(i+1)).join(",")}) ORDER BY ${order} LIMIT 25`,...lastKey));
+   let rows:Array<Record<string,unknown>>;
+   if(lastKey===null){
+    rows=await pg<Array<Record<string,unknown>>>(async (db:PrismaClient):Promise<Array<Record<string,unknown>>> => await db.$queryRawUnsafe<Record<string,unknown>[]>(`SELECT * FROM ${q(table)} ORDER BY ${order} LIMIT 25`));
+   }else{
+    const cursor:unknown[]=lastKey;
+    rows=await pg<Array<Record<string,unknown>>>(async (db:PrismaClient):Promise<Array<Record<string,unknown>>> => await db.$queryRawUnsafe<Record<string,unknown>[]>(`SELECT * FROM ${q(table)} WHERE (${order}) > (${keys.map((_:string,i:number)=>"$"+(i+1)).join(",")}) ORDER BY ${order} LIMIT 25`,...cursor));
+   }
    if(!rows.length)break;
    const statements=rows.map((row:Record<string,unknown>)=>{const cols=Object.keys(row);return {sql:`INSERT OR REPLACE INTO ${q(table)} (${cols.map(q).join(",")}) VALUES (${cols.map(()=>"?").join(",")})`,args:cols.map(k=>value(table,k,row[k]))}});
    for(let i=0;i<statements.length;i+=10)await target.batch(statements.slice(i,i+10),"write");

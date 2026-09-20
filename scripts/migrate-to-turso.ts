@@ -1,5 +1,6 @@
 import {createClient,type InValue} from "@libsql/client";
 import {PrismaClient} from "@prisma/client";
+import pgDriver from "pg";
 
 const tables=["User","Organization","ContractingAgency","RateLimit","SyncJob","SyncCursor","JobRequest","SyncPartition","Membership","Session","PasswordReset","Company","Opportunity","Alert","SyncLog","DetailImport","OpportunityItem","OpportunityDocument","OpportunityMatch","Favorite","OpportunityTracking","Notification","AIAnalysis","AuditLog","DetailPage"] as const;
 const jsonColumns=new Set(["Company.keywords","Company.excludedTerms","Company.regions","Company.modalities","Opportunity.raw","OpportunityItem.raw","OpportunityMatch.reasons","AIAnalysis.result","DetailPage.payload","Alert.keywords"]);
@@ -13,14 +14,20 @@ function value(table:string,key:string,v:unknown):InValue{
 function q(name:string){return '"'+name.replaceAll('"','""')+'"';}
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 function retryable(e:any){const m=String(e?.message??"");return e?.code==="P1017"||m.includes("closed the connection")||m.includes("not yet accepting connections")||m.includes("Consistent recovery state")||m.includes("starting up")||m.includes("recovery mode");}
-async function pg<T>(fn:(db:PrismaClient)=>Promise<T>):Promise<T>{
- for(let attempt=0;attempt<30;attempt++){const db=new PrismaClient();try{return await fn(db)}catch(e){if(!retryable(e)||attempt===29)throw e;const waitMs=Math.min(5000*(attempt+1),60000);console.warn(JSON.stringify({event:"POSTGRES_RECOVERY_WAIT",attempt:attempt+1,waitMs}));await sleep(waitMs)}finally{await db.$disconnect().catch(()=>{})}}
+const {Client:PgClient}=pgDriver;
+async function pg<T extends Record<string,unknown>>(sql:string,params:unknown[]=[]):Promise<T[]>{
+ for(let attempt=0;attempt<30;attempt++){
+  const db=new PgClient({connectionString:process.env.DATABASE_URL});
+  try{await db.connect();const result=await db.query(sql,params);return result.rows as T[]}
+  catch(e){if(!retryable(e)||attempt===29)throw e;const waitMs=Math.min(5000*(attempt+1),60000);console.warn(JSON.stringify({event:"POSTGRES_RECOVERY_WAIT",attempt:attempt+1,waitMs}));await sleep(waitMs)}
+  finally{await db.end().catch(()=>{})}
+ }
  throw new Error("PostgreSQL retry exhausted");
 }
 async function primaryKeyColumns(table:string):Promise<string[]>{
- const rows: Array<{column_name:string}> = await pg<Array<{column_name:string}>>(async (db:PrismaClient):Promise<Array<{column_name:string}>> => await db.$queryRawUnsafe<{column_name:string}[]>(`SELECT a.attname AS column_name FROM pg_index i JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum,ord) ON true JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum WHERE i.indrelid=(quote_ident('public')||'.'||quote_ident($1))::regclass AND i.indisprimary ORDER BY k.ord`,table));
+ const rows: Array<{column_name:string}> = await pg<{column_name:string}>(`SELECT a.attname AS column_name FROM pg_index i JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum,ord) ON true JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum WHERE i.indrelid=(quote_ident('public')||'.'||quote_ident($1))::regclass AND i.indisprimary ORDER BY k.ord`,[table]);
  if(rows.length)return rows.map(r=>r.column_name);
- const fallback: Array<{column_name:string}> = await pg<Array<{column_name:string}>>(async (db:PrismaClient):Promise<Array<{column_name:string}>> => await db.$queryRawUnsafe<{column_name:string}[]>(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 ORDER BY ordinal_position LIMIT 1`,table));
+ const fallback: Array<{column_name:string}> = await pg<{column_name:string}>(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 ORDER BY ordinal_position LIMIT 1`,[table]);
  if(!fallback[0]?.column_name)throw new Error(`Sem coluna de paginação para ${table}`);return [fallback[0].column_name];
 }
 async function main():Promise<void>{
@@ -29,15 +36,15 @@ async function main():Promise<void>{
  const ddl=await (await import("node:fs/promises")).readFile(new URL("./turso-schema.sql",import.meta.url),"utf8");await target.executeMultiple(ddl);
  const report:Record<string,{source:number,target:number}>={};
  for(const table of tables){
-  const countRows: Array<{count:bigint}> = await pg<Array<{count:bigint}>>(async (db:PrismaClient):Promise<Array<{count:bigint}>> => await db.$queryRawUnsafe<{count:bigint}[]>(`SELECT COUNT(*)::bigint AS count FROM ${q(table)}`));const source=Number(countRows[0]?.count??0);
+  const countRows=await pg<{count:string}>(`SELECT COUNT(*)::bigint AS count FROM ${q(table)}`);const source=Number(countRows[0]?.count??0);
   const keys=await primaryKeyColumns(table);const order=keys.map(q).join(",");let copied=0;let lastKey:unknown[]|null=null;
   while(copied<source){
    let rows:Array<Record<string,unknown>>;
    if(lastKey===null){
-    rows=await pg<Array<Record<string,unknown>>>(async (db:PrismaClient):Promise<Array<Record<string,unknown>>> => await db.$queryRawUnsafe<Record<string,unknown>[]>(`SELECT * FROM ${q(table)} ORDER BY ${order} LIMIT 25`));
+    rows=await pg<Record<string,unknown>>(`SELECT * FROM ${q(table)} ORDER BY ${order} LIMIT 25`);
    }else{
     const cursor:unknown[]=lastKey;
-    rows=await pg<Array<Record<string,unknown>>>(async (db:PrismaClient):Promise<Array<Record<string,unknown>>> => await db.$queryRawUnsafe<Record<string,unknown>[]>(`SELECT * FROM ${q(table)} WHERE (${order}) > (${keys.map((_:string,i:number)=>"$"+(i+1)).join(",")}) ORDER BY ${order} LIMIT 25`,...cursor));
+    rows=await pg<Record<string,unknown>>(`SELECT * FROM ${q(table)} WHERE (${order}) > (${keys.map((_:string,i:number)=>"$"+(i+1)).join(",")}) ORDER BY ${order} LIMIT 25`,cursor);
    }
    if(!rows.length)break;
    const statements=rows.map((row:Record<string,unknown>)=>{const cols=Object.keys(row);return {sql:`INSERT OR REPLACE INTO ${q(table)} (${cols.map(q).join(",")}) VALUES (${cols.map(()=>"?").join(",")})`,args:cols.map(k=>value(table,k,row[k]))}});

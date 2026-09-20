@@ -8,7 +8,14 @@ function value(table:string,key:string,v:unknown):InValue{
  if(v===null||v===undefined)return null;if(v instanceof Date)return v.toISOString();if(typeof v==="boolean")return v?1:0;
  if(typeof v==="string"||typeof v==="number"||typeof v==="bigint"||v instanceof Uint8Array)return v;
  if(jsonColumns.has(table+"."+key)||Array.isArray(v))return JSON.stringify(v);
- if(typeof v==="object"&&v&&(v as any).constructor?.name==="Decimal")return String(v);
+ if(typeof v==="object"&&v){
+  const ctor=(v as any).constructor?.name;
+  if(ctor==="Decimal"||ctor==="Numeric"){
+   const s=String(v);
+   const n=Number(s);
+   return Number.isFinite(n)?n:s;
+  }
+ }
  if(typeof v==="object")return JSON.stringify(v);return String(v);
 }
 function q(name:string){return '"'+name.replaceAll('"','""')+'"';}

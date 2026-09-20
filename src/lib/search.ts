@@ -14,34 +14,35 @@ export const querySchema=z.object({
 .refine(v=>!v.from||!v.to||v.from<=v.to,"Período inválido.");
 export async function searchOpportunities(userId:string,params:URLSearchParams){
  const q=querySchema.parse(Object.fromEntries(params));
- const filters:Prisma.Sql[]=[Prisma.sql`TRUE`];
- const pattern=(v:string)=>"%"+v.replace(/[\\%_]/g,"\\$&")+"%";
- const vector=Prisma.sql`to_tsvector('portuguese',coalesce(o."object",'') || ' ' || coalesce(o."description",''))`;
- const rank=q.q?Prisma.sql`ts_rank(${vector},websearch_to_tsquery('portuguese',${q.q}))`:Prisma.sql`0`;
- if(q.state)filters.push(Prisma.sql`o."state"=${q.state.toUpperCase()}`);
- if(q.city)filters.push(Prisma.sql`LOWER(o."city") = LOWER(${q.city})`);
- if(q.agency)filters.push(Prisma.sql`a."name" ILIKE ${pattern(q.agency)}`);
- if(q.modality)filters.push(Prisma.sql`o."modality"=${q.modality}`);
- if(q.min)filters.push(Prisma.sql`o."estimatedValue">=${q.min}::numeric`);
- if(q.max)filters.push(Prisma.sql`o."estimatedValue"<=${q.max}::numeric`);
- if(q.from)filters.push(Prisma.sql`o."publishedAt">=${new Date(q.from+"T00:00:00-03:00")}`);
- if(q.to)filters.push(Prisma.sql`o."publishedAt"<=${new Date(q.to+"T23:59:59.999-03:00")}`);
- if(q.deadline)filters.push(Prisma.sql`o."closesAt"<=${new Date(q.deadline+"T23:59:59.999-03:00")}`);
- if(q.status==="open")filters.push(Prisma.sql`o."closesAt">${new Date()}`);
- if(q.status==="unknown")filters.push(Prisma.sql`o."closesAt" IS NULL`);
- if(q.status==="closed")filters.push(Prisma.sql`o."closesAt"<=${new Date()}`);
- if(q.favorite)filters.push(Prisma.sql`EXISTS(SELECT 1 FROM "Favorite" f WHERE f."opportunityId"=o.id AND f."userId"=${userId})`);
- if(q.recommended||q.minScore)filters.push(Prisma.sql`m.score>=${Math.max(q.minScore,q.recommended?70:0)}`);
- if(q.q)filters.push(Prisma.sql`(${vector} @@ websearch_to_tsquery('portuguese',${q.q}) OR o.id ILIKE ${pattern(q.q)} OR o."number" ILIKE ${pattern(q.q)} OR a.name ILIKE ${pattern(q.q)} OR EXISTS(SELECT 1 FROM "OpportunityItem" i WHERE i."opportunityId"=o.id AND i.description ILIKE ${pattern(q.q)}))`);
- const source=Prisma.sql`FROM "Opportunity" o JOIN "ContractingAgency" a ON a.id=o."agencyId"
- LEFT JOIN LATERAL (SELECT MAX(om.score) AS score FROM "OpportunityMatch" om JOIN "Company" c ON c.id=om."companyId" WHERE om."opportunityId"=o.id AND EXISTS(SELECT 1 FROM "Membership" ms WHERE ms."organizationId"=c."organizationId" AND ms."userId"=${userId})) m ON TRUE
- WHERE ${Prisma.join(filters," AND ")}`;
- const order=q.sort==="deadline"?Prisma.sql`o."closesAt" ASC NULLS LAST`:q.sort==="value_desc"?Prisma.sql`o."estimatedValue" DESC NULLS LAST`:q.sort==="value_asc"?Prisma.sql`o."estimatedValue" ASC NULLS LAST`:q.sort==="score"?Prisma.sql`m.score DESC NULLS LAST`:q.sort==="relevance"?Prisma.sql`${rank} DESC`:Prisma.sql`o."publishedAt" DESC`;
- const [rows,count]=await db.$transaction([
- db.$queryRaw<{id:string}[]>(Prisma.sql`SELECT o.id ${source} ORDER BY ${order},o.id ASC LIMIT 20 OFFSET ${(q.page-1)*20}`),
- db.$queryRaw<{total:bigint}[]>(Prisma.sql`SELECT count(*) AS total ${source}`)
+ const minScore=Math.max(q.minScore,q.recommended?70:0);
+ const where:Prisma.OpportunityWhereInput={};
+ const and:Prisma.OpportunityWhereInput[]=[];
+ if(q.state)and.push({state:q.state.toUpperCase()});
+ if(q.city)and.push({city:q.city});
+ if(q.agency)and.push({agency:{name:{contains:q.agency}}});
+ if(q.modality)and.push({modality:q.modality});
+ if(q.min||q.max)and.push({estimatedValue:{...(q.min?{gte:new Prisma.Decimal(q.min)}:{}),...(q.max?{lte:new Prisma.Decimal(q.max)}:{})}});
+ if(q.from||q.to)and.push({publishedAt:{...(q.from?{gte:new Date(q.from+"T00:00:00-03:00")} : {}),...(q.to?{lte:new Date(q.to+"T23:59:59.999-03:00")} : {})}});
+ if(q.deadline)and.push({closesAt:{lte:new Date(q.deadline+"T23:59:59.999-03:00")}});
+ if(q.status==="open")and.push({closesAt:{gt:new Date()}});
+ if(q.status==="unknown")and.push({closesAt:null});
+ if(q.status==="closed")and.push({closesAt:{lte:new Date()}});
+ if(q.favorite)and.push({favorites:{some:{userId}}});
+ if(q.recommended||q.minScore)and.push({matches:{some:{score:{gte:minScore},company:{organization:{memberships:{some:{userId}}}}}}});
+ if(q.q)and.push({OR:[
+  {object:{contains:q.q}},{description:{contains:q.q}},{id:{contains:q.q}},{number:{contains:q.q}},
+  {agency:{name:{contains:q.q}}},{items:{some:{description:{contains:q.q}}}}
+ ]});
+ if(and.length)where.AND=and;
+ const orderBy:Prisma.OpportunityOrderByWithRelationInput[]=
+  q.sort==="deadline"?[{closesAt:"asc"},{id:"asc"}]:
+  q.sort==="value_desc"?[{estimatedValue:"desc"},{id:"asc"}]:
+  q.sort==="value_asc"?[{estimatedValue:"asc"},{id:"asc"}]:
+  [{publishedAt:"desc"},{id:"asc"}];
+ const [items,total]=await db.$transaction([
+  db.opportunity.findMany({where,orderBy,skip:(q.page-1)*20,take:20,select:{id:true,object:true,description:true,detailsSyncedAt:true,city:true,state:true,modalityName:true,estimatedValue:true,closesAt:true,officialStatus:true,publishedAt:true,agency:{select:{name:true}},favorites:{where:{userId},select:{id:true}},matches:{where:{company:{organization:{memberships:{some:{userId}}}}},orderBy:{score:"desc"},take:1,select:{score:true,reasons:true}},tracking:{where:{userId},select:{status:true}}}}),
+  db.opportunity.count({where})
  ]);
- const items=await db.opportunity.findMany({where:{id:{in:rows.map(r=>r.id)}},select:{id:true,object:true,description:true,detailsSyncedAt:true,city:true,state:true,modalityName:true,estimatedValue:true,closesAt:true,officialStatus:true,publishedAt:true,agency:{select:{name:true}},favorites:{where:{userId},select:{id:true}},matches:{where:{company:{organization:{memberships:{some:{userId}}}}},orderBy:{score:"desc"},take:1,select:{score:true,reasons:true}},tracking:{where:{userId},select:{status:true}}}});
- items.sort((a,b)=>rows.findIndex(r=>r.id===a.id)-rows.findIndex(r=>r.id===b.id));
- const total=Number(count[0].total);return {items,total,page:q.page,pages:Math.ceil(total/20)};
+ if(q.sort==="score")items.sort((a,b)=>(b.matches[0]?.score??-1)-(a.matches[0]?.score??-1));
+ return {items,total,page:q.page,pages:Math.ceil(total/20)};
 }

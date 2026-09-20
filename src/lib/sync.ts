@@ -1,4 +1,6 @@
 import {collectPartitions} from "./sync-collector";
+import {createClient} from "@libsql/client";
+import {randomUUID} from "crypto";
 import {syncError} from "./sync-error";
 import {Prisma} from "@prisma/client";
 const stringArray=(v:Prisma.JsonValue|null):string[]=>Array.isArray(v)?v.filter((x):x is string=>typeof x==="string"):[];
@@ -47,11 +49,18 @@ export async function processAlerts(){
  const mail=await db.notification.findMany({where:{emailedAt:null,alert:{email:true},user:{active:true}},take:100,include:{user:true}});
  if(process.env.SMTP_HOST)for(const n of mail){try{await sendMail(n.user.email,"PNCP Intelligence — nova oportunidade",n.title+"\n"+process.env.APP_URL+"/oportunidades/"+encodeURIComponent(n.opportunityId),n.id);await db.notification.update({where:{id:n.id},data:{emailedAt:new Date()}});}catch{console.error(JSON.stringify({event:"EMAIL_FAILED",notificationId:n.id}));}}
 }
+async function withSyncLock<T>(work:()=>Promise<T>){
+ const url=process.env.TURSO_DATABASE_URL,authToken=process.env.TURSO_AUTH_TOKEN;
+ if(!url||!authToken)throw new Error("Turso não configurado para sync.");
+ const client=createClient({url,authToken}); const owner=randomUUID(); const now=Date.now(),expires=now+20*60_000;
+ await client.execute(`CREATE TABLE IF NOT EXISTS SyncLock (id TEXT PRIMARY KEY, owner TEXT NOT NULL, expiresAt INTEGER NOT NULL)`);
+ const acquired=await client.execute({sql:`INSERT INTO SyncLock(id,owner,expiresAt) VALUES('pncp-sync',?,?)
+ ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,expiresAt=excluded.expiresAt WHERE SyncLock.expiresAt < ?`,args:[owner,expires,now]});
+ if(acquired.rowsAffected===0){console.info(JSON.stringify({event:"PNCP_SYNC_SKIPPED_LOCKED"}));return;}
+ try{return await work();}finally{await client.execute({sql:"DELETE FROM SyncLock WHERE id='pncp-sync' AND owner=?",args:[owner]}).catch(()=>{});client.close();}
+}
 export async function runSync(){
- // Transaction advisory lock reserves one connection, while work uses other pool connections.
- await db.$transaction(async lock=>{
- const result=await lock.$queryRaw<{locked:boolean}[]>`SELECT pg_try_advisory_xact_lock(70421016) AS locked`;
- if(!result[0].locked)return;
+ await withSyncLock(async ()=>{
  await db.syncJob.updateMany({where:{status:"RUNNING"},data:{status:"FAILED",finishedAt:new Date(),error:"Processo anterior interrompido."}});
  const pending=await db.jobRequest.findMany({where:{status:"PENDING"},take:100,orderBy:{createdAt:"asc"}});
  for(const request of pending.filter(r=>r.type.startsWith("DOCUMENT:"))){

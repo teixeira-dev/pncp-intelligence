@@ -18,7 +18,8 @@
     "test:e2e": "playwright test",
     "db:turso:generate": "prisma generate --schema prisma/schema.turso.prisma",
     "db:turso:migrate-data": "tsx scripts/migrate-to-turso.ts",
-    "db:turso:reconcile": "tsx scripts/reconcile-postgres-to-turso.ts"
+    "db:turso:reconcile": "tsx scripts/reconcile-postgres-to-turso.ts",
+    "db:turso:validate-numerics": "tsx scripts/validate-turso-numerics.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

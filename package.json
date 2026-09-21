@@ -11,11 +11,15 @@
     "test": "vitest run",
     "test:integration": "vitest run tests/integration.test.ts",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy",
+    "db:migrate": "echo 'Turso schema is managed separately; Prisma Migrate is not used for remote libSQL'",
     "db:seed": "tsx scripts/seed.ts",
     "admin:create": "tsx scripts/admin.ts",
     "job:sync": "tsx scripts/sync.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "db:turso:generate": "prisma generate --schema prisma/schema.turso.prisma",
+    "db:turso:migrate-data": "tsx scripts/migrate-to-turso.ts",
+    "db:turso:reconcile": "tsx scripts/reconcile-postgres-to-turso.ts",
+    "db:turso:validate-numerics": "tsx scripts/validate-turso-numerics.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
@@ -25,7 +29,10 @@
     "nodemailer": "10.0.10",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "@libsql/client": "0.15.15",
+    "@prisma/adapter-libsql": "6.19.3",
+    "pg": "8.16.3"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
@@ -40,7 +47,8 @@
     "tailwindcss": "4.3.3",
     "tsx": "4.23.13",
     "typescript": "5.9.3",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "@types/pg": "8.15.5"
   },
   "overrides": {
     "deepmerge-ts": "8.0.0"

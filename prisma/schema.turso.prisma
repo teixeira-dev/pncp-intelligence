@@ -1,5 +1,5 @@
 generator client {
- provider = "prisma-client-js"
+ provider = "prisma-client-js"\n output = "../generated/turso"
 }
 datasource db {
  provider = "sqlite"
@@ -67,12 +67,12 @@ model Company {
  activity String @default("")
  products String @default("")
  services String @default("")
- keywords Json @default("[]")
- excludedTerms Json @default("[]")
- regions Json @default("[]")
- modalities Json @default("[]")
- minValue Decimal?
- maxValue Decimal?
+ keywords String[] @default([])
+ excludedTerms String[] @default([])
+ regions String[] @default([])
+ modalities Int[] @default([])
+ minValue Decimal? @db.Decimal(20,2)
+ maxValue Decimal? @db.Decimal(20,2)
  createdAt DateTime @default(now())
  updatedAt DateTime @updatedAt
  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade)
@@ -106,7 +106,7 @@ model Opportunity {
  modalityName String
  disputeMode String?
  officialStatus String
- estimatedValue Decimal?
+ estimatedValue Decimal? @db.Decimal(20,2)
  publishedAt DateTime
  opensAt DateTime?
  closesAt DateTime?
@@ -134,9 +134,9 @@ model OpportunityItem {
  opportunityId String
  number Int
  description String
- quantity Decimal?
+ quantity Decimal? @db.Decimal(20,4)
  unit String?
- unitValue Decimal?
+ unitValue Decimal? @db.Decimal(20,4)
  raw Json
  opportunity Opportunity @relation(fields:[opportunityId],references:[id],onDelete:Cascade)
  @@unique([opportunityId,number])
@@ -188,13 +188,13 @@ model Alert {
  userId String
  companyId String?
  name String
- keywords Json @default("[]")
+ keywords String[] @default([])
  state String?
  city String?
  agency String?
  modality Int?
- minValue Decimal?
- maxValue Decimal?
+ minValue Decimal? @db.Decimal(20,2)
+ maxValue Decimal? @db.Decimal(20,2)
  minScore Int @default(0)
  active Boolean @default(true)
  email Boolean @default(false)

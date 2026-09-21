@@ -40,7 +40,7 @@ export async function enrichOpportunity(id:string,options:{fetcher?:typeof fetch
  if(current.contentHash!==o.contentHash)throw new Error("PNCP_CONTENT_CHANGED_DURING_IMPORT");
  // Keep document IDs stable so queued analyses retain their references.
  for(const item of items){
- const data={description:item.descricao,quantity:item.quantidade?.toFixed(4)??null,unit:item.unidadeMedida,unitValue:item.orcamentoSigiloso?null:item.valorUnitarioEstimado?.toFixed(4)??null,raw:JSON.parse(JSON.stringify(item))};
+ const data={description:item.descricao,quantity:item.quantidade??null,unit:item.unidadeMedida,unitValue:item.orcamentoSigiloso?null:item.valorUnitarioEstimado??null,raw:JSON.parse(JSON.stringify(item))};
  await tx.opportunityItem.upsert({where:{opportunityId_number:{opportunityId:id,number:item.numeroItem}},create:{opportunityId:id,number:item.numeroItem,...data},update:data});
  }
  await tx.opportunityItem.deleteMany({where:{opportunityId:id,number:{notIn:items.map(i=>i.numeroItem)}}});

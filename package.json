@@ -17,7 +17,8 @@
     "job:sync": "tsx scripts/sync.ts",
     "test:e2e": "playwright test",
     "db:turso:generate": "prisma generate --schema prisma/schema.turso.prisma",
-    "db:turso:migrate-data": "tsx scripts/migrate-to-turso.ts"
+    "db:turso:migrate-data": "tsx scripts/migrate-to-turso.ts",
+    "db:turso:reconcile": "tsx scripts/reconcile-postgres-to-turso.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
